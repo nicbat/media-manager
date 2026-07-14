@@ -1,0 +1,23 @@
+{
+  "collectionOrder": ["words", "now"],
+  "collections": {
+    "words": {
+      "displayName": "Words",
+      "icon": "pen-line",
+      "displayField": "title",
+      "schema": {
+        "title": { "type": "string", "removable": true },
+        "date": { "type": "date", "removable": true },
+        "description": { "type": "string", "removable": true },
+        "cover": { "type": "file", "removable": true },
+        "draft": { "type": "boolean", "removable": true }
+      }
+    },
+    "now": {
+      "displayName": "Now",
+      "schema": {
+        "date": { "type": "date", "removable": true }
+      }
+    }
+  }
+}

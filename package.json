@@ -15,7 +15,12 @@
 		"./reader/vite": {
 			"types": "./dist/reader/vite.d.ts",
 			"import": "./dist/reader/vite.js"
-		}
+		},
+		"./reader/posts-enhancer": {
+			"types": "./dist/reader/posts-enhancer.d.ts",
+			"import": "./dist/reader/posts-enhancer.js"
+		},
+		"./reader/posts.css": "./dist/reader/posts.css"
 	},
 	"files": [
 		"build",
@@ -27,7 +32,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"build:reader": "tsc -p tsconfig.reader.json",
+		"build:reader": "tsc -p tsconfig.reader.json && node -e \"require('fs').copyFileSync('src/lib/reader/posts.css','dist/reader/posts.css')\"",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync && npm run build:reader",
 		"start": "node build",
@@ -52,6 +57,7 @@
 		"@tailwindcss/typography": "^0.5.15",
 		"@tailwindcss/vite": "^4.0.0",
 		"@types/heic-convert": "^2.1.0",
+		"@types/markdown-it": "^14.1.2",
 		"@types/node": "^24.0.10",
 		"@typescript-eslint/eslint-plugin": "^8.54.0",
 		"@typescript-eslint/parser": "^8.54.0",
@@ -78,11 +84,24 @@
 	},
 	"dependencies": {
 		"@internationalized/date": "^3.12.2",
+		"@shikijs/langs": "^4.3.1",
+		"@shikijs/themes": "^4.3.1",
+		"@tiptap/core": "^3.27.3",
+		"@tiptap/extension-code-block-lowlight": "^3.27.3",
+		"@tiptap/extension-image": "^3.27.3",
+		"@tiptap/pm": "^3.27.3",
+		"@tiptap/starter-kit": "^3.27.3",
+		"@tiptap/suggestion": "^3.27.3",
 		"exiftool-vendored": "^25.0.0",
 		"google-auth-library": "^10.9.0",
 		"heic-convert": "^2.1.0",
+		"lowlight": "^3.3.0",
 		"lucide-svelte": "^0.525.0",
+		"markdown-it": "^14.3.0",
 		"mode-watcher": "^1.1.0",
-		"sharp": "^0.34.2"
+		"prosemirror-markdown": "^1.13.5",
+		"sharp": "^0.34.2",
+		"shiki": "^4.3.1",
+		"yaml": "^2.9.0"
 	}
 }

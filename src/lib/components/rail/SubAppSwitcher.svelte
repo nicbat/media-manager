@@ -2,7 +2,15 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { goto } from '$app/navigation';
-	import { Files, Layers, SlidersHorizontal, Home, Check, ChevronsUpDown } from 'lucide-svelte';
+	import {
+		Files,
+		Layers,
+		SlidersHorizontal,
+		PenLine,
+		Home,
+		Check,
+		ChevronsUpDown
+	} from 'lucide-svelte';
 
 	/**
 	 * The **sub-app switcher** that lives in the rail header of all three sub-apps (Files, Records,
@@ -18,13 +26,14 @@
 		current,
 		collapsed = false
 	}: {
-		current: 'files' | 'records' | 'globals';
+		current: 'files' | 'records' | 'globals' | 'posts';
 		collapsed?: boolean;
 	} = $props();
 
 	const subApps = [
 		{ id: 'files', label: 'Files', href: '/files', icon: Files },
 		{ id: 'records', label: 'Records', href: '/media', icon: Layers },
+		{ id: 'posts', label: 'Posts', href: '/posts', icon: PenLine },
 		{ id: 'globals', label: 'Globals', href: '/globals', icon: SlidersHorizontal }
 	] as const;
 

@@ -738,6 +738,26 @@ function fileFieldKeys(s) {
 			writeJsonAtomic(recordsSettingsPath, {});
 		});
 	}
+
+	// 6e. Ensure the Posts sub-app registry exists (Item 14). Only a diagnostic when there is post
+	// content on disk but no registry — the app also creates `posts/settings.json` on first write, so
+	// this just heals a hand-created `posts/<collection>/` folder into a listable collection. If a
+	// `posts/` dir exists with collection subfolders but no settings.json, register them.
+	const postsDir = path.join(root, 'posts');
+	const postsSettingsPath = path.join(postsDir, 'settings.json');
+	if (fs.existsSync(postsDir) && !fs.existsSync(postsSettingsPath)) {
+		const collectionIds = fs
+			.readdirSync(postsDir, { withFileTypes: true })
+			.filter((e) => e.isDirectory())
+			.map((e) => e.name);
+		if (collectionIds.length > 0) {
+			plan(`create posts/settings.json registering ${collectionIds.length} collection(s)`, () => {
+				const collections = {};
+				for (const id of collectionIds) collections[id] = { displayName: id };
+				writeJsonAtomic(postsSettingsPath, { collectionOrder: collectionIds, collections });
+			});
+		}
+	}
 })();
 
 // --- Report ---

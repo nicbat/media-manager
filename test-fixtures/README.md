@@ -17,6 +17,9 @@ code paths can be exercised:
 | `records/settings.json`        | Records-scoped prefs — empty `{}` (the dormant `typeOrder` home; Item 18 / Item 41)                                                                                                                                                  |
 | `records/notes/`               | `json` record type; two records; `attachment` **file** field + `related` **record** field (each: one valid, one broken); `settings.json` `icon: newspaper`                                                                           |
 | `globals/`                     | The reserved `json` singleton — stays **top-level** (not under `records/`)                                                                                                                                                           |
+| `posts/settings.json`          | Posts collection registry (Item 14): `words` (typed frontmatter hints incl. `cover`→file, `date`) + `now`                                                                                                                            |
+| `posts/words/tidepooling.md`   | Golden sample post — frontmatter `cover` = sunset blob (`mm://`), prose with marks, an inline `mm://` image, one `mm-beside` island (forest blob), and a fenced `bash` block                                                         |
+| `posts/now/reading.md`         | A short code-block post (a `ts` fence) in the `now` collection                                                                                                                                                                       |
 
 Every blob lives in `media/files/` (`getGlobalFilesDir()`) and is registered in
 `media/manifest.json` with a stable id; a class is a member-keyed metadata table

@@ -314,23 +314,50 @@ acceptance:
 
 Same treatment as PDFs, for Word docs, with an easy path to PDF (which the app previews + reads metadata from). **Open question (blocks):** converter choice — LibreOffice-headless (heavy, high fidelity) vs. pure-JS (light, lower fidelity) — decide against the npx-package distribution footprint (Item 30). Also depends on Item 21's PDF preview landing.
 
-### 14 · Markdown Blog Media Kind
+### 14 · Posts — a Markdown writing sub-app
 
 ```yaml
-status: discussion
+status: ready
 size: L
-usefulness: 3
+usefulness: 4
 priority: medium
-files: [src/lib/storage/settingsFile.ts, src/lib/storage/mediaTypes.ts, src/routes/media/[typeId]/+page.svelte]
+files:
+  [
+    src/lib/storage/paths.ts,
+    src/lib/storage/mediaTypes.ts,
+    src/lib/storage/json.ts,
+    src/lib/storage/settingsFile.ts,
+    src/lib/reader/media-manager.ts,
+    src/lib/api/client.ts,
+    src/lib/components/rail/SubAppSwitcher.svelte,
+    src/lib/components/rail/EntityRail.svelte,
+    src/lib/components/CommandPalette.svelte,
+    src/lib/components/GlobalsEditorPane.svelte,
+    src/lib/components/FilePicker.svelte,
+    src/lib/components/FieldInput.svelte,
+    src/lib/actions/autosave.svelte.ts,
+    package.json
+  ]
 depends_on: []
-open_questions: 2
+open_questions: 0
 acceptance:
-  - (Redesign against the file-first/classes model FIRST — the original sketch predates it)
+  - New **Posts** sub-app at `/posts` (peer to Files/Records/Globals) — added to `SubAppSwitcher`, the `EntityRail` `current` union, and `CommandPalette`; open post deep-linked via `?collection=&post=`
+  - On-disk `<root>/posts/<collection>/<slug>.md` (filename = slug); collections registered in `posts/settings.json` (order + per-collection typed frontmatter hints); `postsRepo` CRUD (list/read/write/create/rename/delete) under `withFileLock` + atomic writes; `'posts'` added to `RESERVED_TYPE_FOLDER_NAMES`
+  - Markdown-first hybrid body: prose = Markdown, layout blocks = self-contained `mm-*` HTML islands (`mm-inline` · `mm-beside`+`data-side` · `mm-pair` · `mm-bleed`), code = native fenced Markdown
+  - Freeform, typed-per-field frontmatter editor reusing `FieldInput` (cover→FilePicker storing `mm://<uuid>`, date→DateField), serialized to plain YAML; shared `createAutosave`; Edit/Preview toggle
+  - TipTap block editor: prose WYSIWYG Markdown, the four `mm-*` photo blocks as one opaque `htmlIsland` atom inserted from `FilePicker`, a lowlight fenced code block, insertion via **both** a shadcn toolbar (Bold/Italic/Code/Link + Block ▾ + Photo ▾) **and a `/` slash menu** (`@tiptap/suggestion`); a selected island is edited in the **right metadata panel** (`IslandEditor`: change photo / caption / side / roomy prose textarea / **convert kind in place** / delete); external links **open in a new tab** (render-only); **round-trip stable + idempotent** `md → doc → md` for prose, each island, and fenced code (`prosemirror-markdown` serializer, proven by a spike + tests)
+  - Reader gains `posts()`: `load({data,files,posts})` (third `?raw` glob), `mm.posts(collection).bySlug(slug)/.all()` → `{ meta, html }` with every `mm://` (frontmatter + inline + island `src`) resolved via the existing asset index; fenced code highlighted by bundled **Shiki** (themeable, default sensible; nicb.at → `catppuccin-mocha`); ships `media-manager/reader/posts.css` + a copy-button enhancer
+  - nicb.at consumes it: **Words** + **Now** collections rendered via `mm.posts()`; `lazy_loading.md`→Words and `/now`→Now migrated (dates → ISO); its hand-rolled markdown loader retired
+  - Docs + fixtures: `FEATURES.md` Posts row + layout block; `test-fixtures/posts/` seed (prose+image via `mm://` + a code post); `upgrade-data` ensures `posts/` exists; reader `README` documents the third glob
 ```
 
-> ⚠️ **Predates the file-first redesign.** The original plan ("add a `markdown` value to `MediaTypeKind`, sibling repo to `repo.ts`, kind-switched editor pane") references a world that's gone: `MediaTypeKind` is now **`json`-only**, `repo.ts`/`blob_store`/`images` kinds were removed, and files are handled by **classes**, not media-type kinds. This needs a **redesign against classes**, not a re-link — hence `discussion`, not `ready`.
+> ✅ **In-repo complete (2026-07-09) — only the out-of-repo Phase 5 (nicb.at migration) remains.** Shipped: **Phase 1** (`postsRepo`/`postsSettings`/`frontmatter` storage spine + tests), **Phase 2** (full `/api/posts/...` surface, the `/posts` sub-app — switcher + rail + CommandPalette + deep-link `?collection=&post=`, typed `PostsFrontmatterPanel` reusing `FieldInput`, Edit/Preview via client `markdown-it`, shared `createAutosave`), **Phase 3** (the **TipTap block editor** — `PostBodyEditor` + `posts/tiptap/`: the `prosemirror-markdown` serializer `serialize.ts` **byte-stable + idempotent** (round-trip tested), the single opaque `htmlIsland` atom node backing all four `mm-*` blocks, island builders/parser, inline `mm://` images resolved for display, a shadcn Block/Photo toolbar + selection-driven island edit bar, `FilePicker` extended with a controlled/triggerless mode for programmatic photo insertion), **Phase 4** (reader `mm.posts()` → `{ meta, html }` with `mm://` resolution + **bundled Shiki** sync highlighting + `posts.css` + `posts-enhancer`, `?raw` posts glob in `load()`; reader tests + real-fixture render verified), and **Phase 6** (`FEATURES.md` Posts + reader rows, `test-fixtures/posts/` golden sample, `upgrade-data` heal, reader `README`). **Converged onto shared infra (2026-07-09):** a collection's frontmatter fields are a full `SchemaDefinition` (not bespoke `fieldHints`), edited by the **shared `EntitySettingsDialog` + `SchemaEditorBody`** (General/Fields/Danger, add/edit/delete/**drag-reorder**) via a `postsSettingsAdapter`; `/api/posts/[collection]/schema` mirrors the media-types schema routes (`postsSchema.ts`); the frontmatter editor is `FieldInput`-per-schema-field like `RecordDetailPane`; explicit filename (slug) rename + `displayField` title-by; legacy `fieldHints` auto-upgrade on first edit. **Editor refinements (2026-07-13):** the editor was reshaped to the **Records layout** — a middle writing column + a right **Post details** panel (frontmatter + Saving…/Saved + Delete +, on selection, the island editor). Added: a **`/` slash menu** (`tiptap/slash.ts` over `@tiptap/suggestion`), **convert-block-kind-in-place** + a **roomy prose textarea** for "text beside photo" (both in the new `IslandEditor`), and **external links auto-open in a new tab** (render-only rule in Preview + reader, `renderPreview.ts: externalLinkTargets`). **Remaining:** **Phase 5** — nicb.at migration (out-of-repo, in `~/Projects/nicb.at`); media-manager itself is unchanged by it. New editor deps: `@tiptap/*` (incl. `@tiptap/suggestion`), `prosemirror-markdown`, `lowlight`.
 
-The user value (manage a set of `.md` files with schema-driven metadata, e.g. blog posts) is real and high if blogging becomes a concrete use. **Open questions:** where a markdown kind sits in the file-first model (a class over `.md` blobs? a new top-level kind?); metadata source of truth (YAML frontmatter vs. sidecar JSON vs. bidirectional sync — sync is most useful, hardest to keep consistent).
+> ✅ **Redesigned against the file-first model (2026-07-07); all prior open questions resolved.** The original "markdown `MediaTypeKind`" sketch is dropped — markdown posts are **not** a media kind or a class over `.md` blobs. They are a **new top-level sub-app** (peer to Files/Records/Globals), the same shape as Records but storing `.md` files instead of JSON records. Full file-grounded build plan: [`plans/posts-markdown-sub-app-plan.md`](plans/posts-markdown-sub-app-plan.md).
+
+**Locked decisions:** `.md` edited in place at `<root>/posts/<collection>/<slug>.md`; **markdown-first hybrid** body (prose Markdown + `mm-*` HTML islands + native fenced code); freeform **typed-per-field frontmatter** (Globals-style, YAML on disk, `cover: mm://<uuid>`); **TipTap** Notion-style block editor (`/` menu, custom photo-block nodes → `FilePicker`, lowlight code, Edit/Preview); photo layouts inline / text-beside / pair / full-bleed; **image refs `mm://<uuid>` resolved by the reader**, not per-site plugins; the **reader owns rendering** (`mm.posts()` → `{ meta, html }`, bundled **Shiki**, shipped `posts.css` + copy-button enhancer). **Seed:** nicb.at Words + Now (migrate `lazy_loading.md` + `/now`, ISO dates); Ariel Blog + per-site prose theming deferred.
+
+**Biggest risk — DE-RISKED (2026-07-08):** a spike proved markdown-first round-trip **byte-stable + idempotent** for prose / `mm-*` HTML islands / fenced code; **bridge chosen: `prosemirror-markdown`** with a custom serializer + an `html_island` atom node (`tiptap-markdown` rejected — needs a DOM, less control). One constraint: emit island children with no internal blank lines. Recipe in [`plans/posts-markdown-sub-app-plan.md`](plans/posts-markdown-sub-app-plan.md). **New deps:** `shiki` + `markdown-it` + `yaml`/`js-yaml` (reader + storage), and `@tiptap/*` + `lowlight` + `prosemirror-markdown` (editor only). Structurally a sub-app, but it stays in the _Media kinds & preview_ cluster (markdown is named in that cluster's theme).
 
 ---
 

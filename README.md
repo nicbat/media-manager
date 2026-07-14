@@ -137,7 +137,7 @@ Publishing to the npm registry is a later phase — until then `npx media-manage
 
 ```bash
 # A) from a clone of this repo (build is created on first run):
-git clone git@github.com:type-a-group/media-manager.git
+git clone git@github.com:nicbat/media-manager.git
 cd media-manager && npm install
 npx media-manager /path/to/my-data        # runs the package's own bin
 
@@ -148,9 +148,9 @@ npm install
 npx media-manager
 
 # C) straight from GitHub, no clone — npx fetches the repo and builds on first run:
-npx github:type-a-group/media-manager          # if the repo is public
-npx git+ssh://git@github.com/type-a-group/media-manager.git   # private repo: uses your SSH key
-npx github:type-a-group/media-manager#v1.0.0   # pin a tag/branch/commit for reproducibility
+npx github:nicbat/media-manager          # if the repo is public
+npx git+ssh://git@github.com/nicbat/media-manager.git   # private repo: uses your SSH key
+npx github:nicbat/media-manager#v1.0.0   # pin a tag/branch/commit for reproducibility
 ```
 
 Route **C** clones into npx’s cache, installs deps (incl. dev deps, so `prepare` runs), then the CLI **builds on demand** since `build/` isn’t committed — so the first run is slow, later runs reuse the cache (bump the `#ref` or `npx --ignore-existing` to refresh).

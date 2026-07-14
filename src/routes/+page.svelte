@@ -2,20 +2,24 @@
 	import { onMount } from 'svelte';
 	import { apiListClasses, apiListFiles } from '$lib/api/files.js';
 	import { apiListMediaTypes, apiGetGlobalsRecord } from '$lib/api/client.js';
+	import { apiListPostCollections } from '$lib/api/posts.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import SettingsButton from '$lib/components/SettingsButton.svelte';
 	import { GLOBALS_META_KEYS } from '$lib/core/fieldKeys.js';
-	import { Files, Layers, SlidersHorizontal } from 'lucide-svelte';
+	import { Files, Layers, PenLine, SlidersHorizontal } from 'lucide-svelte';
 
 	/**
-	 * Home launcher: the workspace's three peer sub-apps as large entry cards — **Files** (the blob
-	 * hub + classes), **Records** (`json` record types), and **Globals** (the app-wide singleton).
-	 * Per-class / per-type browsing and creation live *inside* each sub-app (their rails), so the home
-	 * page deliberately does not re-list every entity — it just routes to the three and shows a count.
+	 * Home launcher: the workspace's four peer sub-apps as large entry cards — **Files** (the blob
+	 * hub + classes), **Records** (`json` record types), **Posts** (markdown collections), and
+	 * **Globals** (the app-wide singleton). Per-class / per-type / per-collection browsing and creation
+	 * live *inside* each sub-app (their rails), so the home page deliberately does not re-list every
+	 * entity — it just routes to the four and shows a count.
 	 */
 	let totalFiles = $state(0);
 	let classCount = $state(0);
 	let recordTypeCount = $state(0);
+	let postCollectionCount = $state(0);
+	let postCount = $state(0);
 	let globalsFieldCount = $state(0);
 	let loading = $state(true);
 
@@ -30,16 +34,19 @@
 	async function load() {
 		loading = true;
 		try {
-			const [cls, types, files, globals] = await Promise.all([
+			const [cls, types, files, postCollections, globals] = await Promise.all([
 				apiListClasses().catch(() => []),
 				apiListMediaTypes().catch(() => []),
 				apiListFiles().catch(() => ({ files: [] })),
+				apiListPostCollections().catch(() => []),
 				apiGetGlobalsRecord().catch(() => ({}) as Record<string, unknown>)
 			]);
 			classCount = cls.length;
 			// Globals is its own peer here, not a record type.
 			recordTypeCount = types.filter((t) => t.id !== 'globals').length;
 			totalFiles = files.files.length;
+			postCollectionCount = postCollections.length;
+			postCount = postCollections.reduce((sum, c) => sum + c.count, 0);
 			globalsFieldCount = Object.keys(globals).filter((k) => !GLOBALS_SYSTEM_KEYS.has(k)).length;
 		} finally {
 			loading = false;
@@ -58,7 +65,7 @@
 		<SettingsButton />
 	</header>
 
-	<div class="grid gap-4 sm:grid-cols-3">
+	<div class="grid gap-4 sm:grid-cols-2">
 		<a href="/files" class="block">
 			<Card.Root class="group h-full transition-colors hover:border-primary hover:bg-muted/40">
 				<Card.Header>
@@ -88,6 +95,23 @@
 				<Card.Content class="text-sm text-muted-foreground">
 					{#if !loading}
 						{plural(recordTypeCount, 'type')}
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</a>
+
+		<a href="/posts" class="block">
+			<Card.Root class="group h-full transition-colors hover:border-primary hover:bg-muted/40">
+				<Card.Header>
+					<PenLine
+						class="size-8 text-muted-foreground transition-colors group-hover:text-primary"
+					/>
+					<Card.Title class="text-xl">Posts</Card.Title>
+					<Card.Description>Markdown posts that embed photos from your Files.</Card.Description>
+				</Card.Header>
+				<Card.Content class="text-sm text-muted-foreground">
+					{#if !loading}
+						{plural(postCollectionCount, 'collection')} · {plural(postCount, 'post')}
 					{/if}
 				</Card.Content>
 			</Card.Root>

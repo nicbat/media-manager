@@ -16,6 +16,13 @@
 import { Collection } from './collection.js';
 import { MediaItem, MMRecord, type ReaderContext } from './items.js';
 import { parseManifest, type Manifest } from './manifest.js';
+import {
+	PostCollection,
+	DEFAULT_POSTS_THEME,
+	type PostsOptions,
+	type PostsTheme,
+	type PostRenderContext
+} from './posts.js';
 
 type RawRecord = Record<string, unknown>;
 
@@ -74,16 +81,26 @@ export interface ParsedWorkspace {
 	recordTypes?: Record<string, { settings?: unknown; data?: unknown }>;
 	/** The globals singleton's parsed `settings.json` + `data.json`. */
 	globals?: { settings?: unknown; data?: unknown };
+	/** collection id → (slug → raw `.md` string). Posts sub-app (Item 14). */
+	posts?: Record<string, Record<string, string>>;
 	/** filename → resolved (bundler-hashed) asset URL. */
 	assets?: Record<string, string>;
 }
 
-/** The two glob maps a Vite host passes to {@link MediaManager.load}. */
+/** The glob maps a Vite host passes to {@link MediaManager.load}. */
 export interface WorkspaceGlobs {
 	/** `import.meta.glob('<root>/**\/*.json', { eager: true, import: 'default' })` — parsed JSON by path. */
 	data: Record<string, unknown>;
 	/** `import.meta.glob('<root>/media/files/*', { eager: true, query: '?url', import: 'default' })`. */
 	files: Record<string, unknown>;
+	/** `import.meta.glob('<root>/posts/**\/*.md', { eager: true, query: '?raw', import: 'default' })` — Item 14. */
+	posts?: Record<string, unknown>;
+}
+
+/** Reader options passed as the second arg to {@link MediaManager.load}/{@link MediaManager.fromParsed}. */
+export interface ReaderOptions {
+	/** Posts sub-app rendering options (fenced-code theme). */
+	posts?: PostsOptions;
 }
 
 export class MediaManager implements ReaderContext {
@@ -99,9 +116,17 @@ export class MediaManager implements ReaderContext {
 	private readonly recordsRawById = new Map<string, RawRecord>();
 	/** Memoized MMRecords by id (so resolved references share identity, like {@link fileCache}). */
 	private readonly recordCache = new Map<string, MMRecord | null>();
+	/** collection id → (slug → raw `.md`), from the posts glob (Item 14). */
+	private readonly postsRaw: Record<string, Record<string, string>>;
+	/** Fenced-code theme for `posts()` rendering. */
+	private readonly postsTheme: PostsTheme;
+	/** Memoized {@link PostCollection} views by collection id. */
+	private readonly postCollectionCache = new Map<string, PostCollection>();
 
-	private constructor(parsed: ParsedWorkspace) {
+	private constructor(parsed: ParsedWorkspace, options?: ReaderOptions) {
 		this.manifest = parseManifest(parsed.manifest);
+		this.postsRaw = parsed.posts ?? {};
+		this.postsTheme = options?.posts?.theme ?? DEFAULT_POSTS_THEME;
 
 		this.assetIndex = new Map();
 		for (const [filename, url] of Object.entries(parsed.assets ?? {})) {
@@ -156,8 +181,8 @@ export class MediaManager implements ReaderContext {
 	 * {@link load} and by tests / custom adapters. Throws {@link import('./manifest.js').WorkspaceFormatError}
 	 * if the manifest is absent or an unsupported version.
 	 */
-	static fromParsed(parsed: ParsedWorkspace): MediaManager {
-		return new MediaManager(parsed);
+	static fromParsed(parsed: ParsedWorkspace, options?: ReaderOptions): MediaManager {
+		return new MediaManager(parsed, options);
 	}
 
 	/**
@@ -169,10 +194,14 @@ export class MediaManager implements ReaderContext {
 	 * const mm = MediaManager.load({
 	 *   data:  import.meta.glob('$assets/mm/**\/*.json', { eager: true, import: 'default' }),
 	 *   files: import.meta.glob('$assets/mm/media/files/*', { eager: true, query: '?url', import: 'default' }),
-	 * });
+	 *   posts: import.meta.glob('$assets/mm/posts/**\/*.md', { eager: true, query: '?raw', import: 'default' }),
+	 * }, { posts: { theme: 'catppuccin-mocha' } });
 	 */
-	static load(globs: WorkspaceGlobs): MediaManager {
-		return MediaManager.fromParsed(classifyGlobs(globs.data ?? {}, globs.files ?? {}));
+	static load(globs: WorkspaceGlobs, options?: ReaderOptions): MediaManager {
+		return MediaManager.fromParsed(
+			classifyGlobs(globs.data ?? {}, globs.files ?? {}, globs.posts ?? {}),
+			options
+		);
 	}
 
 	// ── ReaderContext ──────────────────────────────────────────────────────────
@@ -306,6 +335,33 @@ export class MediaManager implements ReaderContext {
 		}));
 	}
 
+	/**
+	 * The posts of a markdown collection (`mm.posts('words')`) as a lazily-rendered
+	 * {@link PostCollection} — `.all()` / `.bySlug()` yield {@link import('./posts.js').PostItem}s with
+	 * every `mm://` resolved to an asset URL and fenced code Shiki-highlighted (Item 14). An unknown
+	 * collection id yields an empty collection.
+	 */
+	posts(collection: string): PostCollection {
+		const cached = this.postCollectionCache.get(collection);
+		if (cached) return cached;
+		const renderCtx: PostRenderContext = {
+			resolveFile: (id) => this.fileById(id)?.src ?? null
+		};
+		const view = new PostCollection(
+			collection,
+			this.postsRaw[collection] ?? {},
+			renderCtx,
+			this.postsTheme
+		);
+		this.postCollectionCache.set(collection, view);
+		return view;
+	}
+
+	/** Every post-collection id present in the workspace (folder names under `posts/`). */
+	postCollections(): string[] {
+		return Object.keys(this.postsRaw);
+	}
+
 	/** Build the constructor init for an {@link MMRecord} from a raw record (system/meta keys stripped). */
 	private recordInit(raw: RawRecord) {
 		return {
@@ -350,9 +406,16 @@ function stripSystemKeys(raw: RawRecord): RawRecord {
  */
 function classifyGlobs(
 	dataGlob: Record<string, unknown>,
-	filesGlob: Record<string, unknown>
+	filesGlob: Record<string, unknown>,
+	postsGlob: Record<string, unknown> = {}
 ): ParsedWorkspace {
-	const parsed: ParsedWorkspace = { manifest: undefined, classes: {}, recordTypes: {}, assets: {} };
+	const parsed: ParsedWorkspace = {
+		manifest: undefined,
+		classes: {},
+		recordTypes: {},
+		posts: {},
+		assets: {}
+	};
 
 	for (const [path, value] of Object.entries(dataGlob)) {
 		const p = path.replace(/\\/g, '/');
@@ -377,6 +440,14 @@ function classifyGlobs(
 		if (typeof url !== 'string') continue;
 		const base = path.replace(/\\/g, '/').split('/').pop();
 		if (base) parsed.assets![base] = url;
+	}
+
+	// Posts (`?raw` glob): `posts/<collection>/<slug>.md` → parsed.posts[collection][slug] = rawString.
+	for (const [path, raw] of Object.entries(postsGlob)) {
+		if (typeof raw !== 'string') continue;
+		const m = path.replace(/\\/g, '/').match(/(^|\/)posts\/([^/]+)\/([^/]+)\.md$/);
+		if (!m) continue;
+		(parsed.posts![m[2]] ??= {})[m[3]] = raw;
 	}
 
 	return parsed;

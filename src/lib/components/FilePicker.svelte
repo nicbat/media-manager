@@ -12,7 +12,9 @@
 		value = $bindable(),
 		multiselect = false,
 		classId,
-		onSelect
+		onSelect,
+		open = $bindable(false),
+		trigger = true
 	}: {
 		/** The selected blob `file_id` (single) or an array of ids (multiselect), or empty. */
 		value?: string | string[];
@@ -21,9 +23,11 @@
 		/** When set, the picker offers only members of this class (a hard class filter). */
 		classId?: string;
 		onSelect?: (value: string | string[]) => void;
+		/** Controlled open state — `bind:open` to drive the dialog programmatically. */
+		open?: boolean;
+		/** When false, render only the dialog (no trigger/chips) so a caller can open it via `bind:open`. */
+		trigger?: boolean;
 	} = $props();
-
-	let open = $state(false);
 	let files = $state<FileItem[]>([]);
 	let loading = $state(false);
 	let query = $state('');
@@ -154,7 +158,12 @@
 	</span>
 {/snippet}
 
-{#if multiselect}
+{#if !trigger}
+	<!-- Triggerless / controlled mode: caller opens the dialog via `bind:open`. -->
+	<Dialog.Root bind:open>
+		{@render pickerContent()}
+	</Dialog.Root>
+{:else if multiselect}
 	<div class="flex w-full flex-col gap-2">
 		{#if selectedIds.length > 0}
 			<div class="flex flex-wrap gap-1.5">

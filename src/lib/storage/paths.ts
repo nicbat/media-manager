@@ -30,6 +30,8 @@ export const GLOBAL_FILES_DIR_NAME = 'files' as const;
 export const CLASSES_DIR_NAME = 'classes' as const;
 /** Folder name under {@link getRootDir} that holds the `json`-kind record types (Item 18 reorg). */
 export const RECORDS_DIR_NAME = 'records' as const;
+/** Folder name under {@link getRootDir} that holds the markdown Posts sub-app (Item 14). */
+export const POSTS_DIR_NAME = 'posts' as const;
 /** The reserved `json` singleton's typeId. It stays top-level at `<root>/globals/`, not under `records/`. */
 export const GLOBALS_TYPE_ID = 'globals' as const;
 
@@ -199,4 +201,74 @@ export function listMediaTypeIds(): string[] {
 		typeIds.push(GLOBALS_TYPE_ID);
 	}
 	return typeIds;
+}
+
+/* ------------------------------------------------------------------------------------------------ *
+ * Posts sub-app (Item 14) — markdown posts under `<root>/posts/<collection>/<slug>.md`.
+ *
+ * Structurally the records-side mirror: `posts/` is the hub, each **collection** is a folder holding
+ * `.md` files (one per post; the filename stem **is** the slug), and `posts/settings.json` is the
+ * collection registry (order + per-collection typed frontmatter hints). Unlike record types there is
+ * no per-collection `settings.json` — a collection is just a directory of `.md` files; all collection
+ * metadata lives centrally in `posts/settings.json`.
+ * ------------------------------------------------------------------------------------------------ */
+
+/** Absolute path to the Posts sub-app root (`<root>/posts`). */
+export function getPostsDir(): string {
+	return path.join(getRootDir(), POSTS_DIR_NAME);
+}
+
+/** Absolute path to the Posts collection registry (`<root>/posts/settings.json`). */
+export function getPostsSettingsPath(): string {
+	return path.join(getPostsDir(), 'settings.json');
+}
+
+/** Absolute path to a single collection's directory (`<root>/posts/<collection>`). */
+export function getPostCollectionDir(collection: string): string {
+	return path.join(getPostsDir(), collection);
+}
+
+/** Absolute path to a single post file (`<root>/posts/<collection>/<slug>.md`). */
+export function getPostFilePath(collection: string, slug: string): string {
+	return path.join(getPostCollectionDir(collection), `${slug}.md`);
+}
+
+/**
+ * List the ids (folder names) of every post collection under `<root>/posts`.
+ *
+ * A collection is any subdirectory of `posts/` (the flat `settings.json` file is skipped). Mirrors
+ * {@link listMediaTypeIds} but keyed off directory presence rather than a per-folder settings file.
+ *
+ * @returns Collection ids in no guaranteed order (empty when `posts/` is absent).
+ */
+export function listPostCollectionIds(): string[] {
+	let entries: fssync.Dirent[] = [];
+	try {
+		entries = fssync.readdirSync(getPostsDir(), { withFileTypes: true });
+	} catch (err) {
+		const e = err as NodeJS.ErrnoException;
+		if (e.code === 'ENOENT') return [];
+		throw e;
+	}
+	return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+}
+
+/**
+ * List the slugs (filename stems) of every `.md` post in a collection.
+ *
+ * @param collection - The collection id (folder name).
+ * @returns Slugs in no guaranteed order (empty when the collection dir is absent).
+ */
+export function listPostSlugs(collection: string): string[] {
+	let entries: fssync.Dirent[] = [];
+	try {
+		entries = fssync.readdirSync(getPostCollectionDir(collection), { withFileTypes: true });
+	} catch (err) {
+		const e = err as NodeJS.ErrnoException;
+		if (e.code === 'ENOENT') return [];
+		throw e;
+	}
+	return entries
+		.filter((e) => e.isFile() && e.name.endsWith('.md') && !e.name.endsWith('.lock'))
+		.map((e) => e.name.slice(0, -'.md'.length));
 }

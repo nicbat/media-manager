@@ -11,9 +11,18 @@ export { MediaManager } from './media-manager.js';
 export type {
 	ParsedWorkspace,
 	WorkspaceGlobs,
+	ReaderOptions,
 	ClassSummary,
 	TypeSummary
 } from './media-manager.js';
+export {
+	PostCollection,
+	POSTS_THEMES,
+	DEFAULT_POSTS_THEME,
+	type PostItem,
+	type PostsOptions,
+	type PostsTheme
+} from './posts.js';
 export { Collection, type FieldAccessible } from './collection.js';
 export { MediaItem, MMRecord, type ReaderContext } from './items.js';
 export {

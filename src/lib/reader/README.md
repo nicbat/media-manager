@@ -30,7 +30,7 @@ While unpublished, depend on it locally (a sibling checkout) or from git:
 ```jsonc
 // host package.json
 "dependencies": { "media-manager": "file:../media-manager" }
-// or: "media-manager": "github:type-a-group/media-manager#v1.x"
+// or: "media-manager": "github:nicbat/media-manager#v1.x"
 ```
 
 The subpath ships prebuilt JS + `.d.ts` (built by `npm run build:reader`; runs automatically on
@@ -121,6 +121,8 @@ mm.file(id); // one blob by manifest id              → MediaItem | null
 mm.record(id); // one record by id (any type/globals)  → MMRecord | null
 mm.classes(); // [{ id, name, icon?, count }]
 mm.types(); // [{ id, name, count }]
+mm.posts('words'); // a markdown collection               → PostCollection
+mm.postCollections(); // [collectionId, …]
 ```
 
 > The record class is exported as **`MMRecord`** (not `Record`) so it never shadows TypeScript's
@@ -206,6 +208,67 @@ p.records('contributors'); // → Collection<MMRecord>  (dangling ids dropped)
 
 A dangling reference yields `null` (or is dropped from `files()` / `records()`), never a throw or a
 broken render. Because identity is shared, you can chain hops: `p.record('lead').file('avatar')?.src`.
+
+## Posts — rendered markdown (Item 14)
+
+The **Posts** sub-app stores markdown at `posts/<collection>/<slug>.md`. The reader renders a post to
+finished HTML with every image reference resolved and fenced code highlighted — pass a **third** glob
+(`?raw`, so the `.md` arrives as a string) and, optionally, a fenced-code theme:
+
+```svelte
+<script>
+	import { MediaManager } from 'media-manager/reader/vite';
+	import 'media-manager/reader/posts.css'; // block + code layout (import once)
+
+	const mm = MediaManager.load(
+		{
+			data: import.meta.glob('$assets/media_manager/**/*.json', { eager: true, import: 'default' }),
+			files: import.meta.glob('$assets/media_manager/media/files/*', {
+				eager: true,
+				query: '?url',
+				import: 'default'
+			}),
+			posts: import.meta.glob('$assets/media_manager/posts/**/*.md', {
+				eager: true,
+				query: '?raw',
+				import: 'default'
+			})
+		},
+		{ posts: { theme: 'catppuccin-mocha' } } // one of POSTS_THEMES; defaults to github-dark
+	);
+
+	const words = mm.posts('words').all(); // PostItem[] — date-desc
+</script>
+
+{#each words as post (post.slug)}
+	<article>
+		<h2>{post.meta.title}</h2>
+		{#if post.meta.cover}<img src={post.meta.cover} alt="" />{/if}
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+		{@html post.html}
+	</article>
+{/each}
+```
+
+A `PostItem` is `{ collection, slug, meta, html }`: `meta` is the frontmatter with every `mm://<uuid>`
+value (e.g. `cover`) resolved to its hashed asset URL, and `html` is the rendered body — every `mm://`
+(inline `![](mm://…)` images **and** `mm-*` island `src`s) resolved, prose as markdown, the `mm-*`
+HTML islands passed through verbatim, and fenced code Shiki-highlighted at build time. Links to other
+sites (absolute `http(s)`) render with `target="_blank"` + `rel="noopener noreferrer"` so they open
+outside your site; internal/relative links stay in-tab. Pair it with the shipped
+`media-manager/reader/posts.css` (layout only — you theme prose yourself). An unresolvable `mm://` ref
+is left intact rather than broken. `mm.posts(id)` returns a `PostCollection`
+(`.all()` / `.bySlug(slug)`); enumerate collection ids with `mm.postCollections()`.
+
+Bundled code themes (`POSTS_THEMES`): `github-dark` (default), `github-light`, `catppuccin-mocha`,
+`catppuccin-latte`. A fenced block whose language isn't in the bundled set degrades to plaintext.
+
+**Optional copy buttons.** A tiny progressive enhancement adds a Copy button to each code block:
+
+```js
+import { enhancePosts } from 'media-manager/reader/posts-enhancer';
+onMount(() => enhancePosts()); // idempotent; no-ops server-side
+```
 
 ## Missing files
 

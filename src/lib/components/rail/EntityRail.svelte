@@ -33,7 +33,7 @@
 		belowHeader,
 		footer
 	}: {
-		current?: 'files' | 'records' | 'globals';
+		current?: 'files' | 'records' | 'globals' | 'posts';
 		title?: string;
 		collapsed: boolean;
 		onToggleCollapse: () => void;

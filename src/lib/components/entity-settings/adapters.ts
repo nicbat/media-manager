@@ -20,6 +20,16 @@ import {
 	apiDeleteSchemaFieldForType,
 	apiReorderSchemaFieldsForType
 } from '$lib/api/client.js';
+import {
+	apiGetPostCollection,
+	apiUpdatePostCollection,
+	apiDeletePostCollection,
+	apiGetPostCollectionSchema,
+	apiAddPostCollectionField,
+	apiUpdatePostCollectionField,
+	apiDeletePostCollectionField,
+	apiReorderPostCollectionSchema
+} from '$lib/api/posts.js';
 
 /** `{ key, label }` list for a class schema's title/group selects, in schema (manual) order. */
 function classFields(schema: SchemaDefinition): { key: string; label: string }[] {
@@ -131,5 +141,48 @@ export function typeSettingsAdapter(typeId: string): EntitySettingsAdapter {
 		remove: async () => {
 			await apiDeleteMediaType(typeId);
 		}
+	};
+}
+
+/**
+ * Entity-settings adapter for a Posts **collection** (`/api/posts/[collection]`). General tab persists
+ * `displayName`, `icon`, and `displayField` (title-by — which frontmatter field titles a post in the
+ * rail); Fields tab drives the collection's frontmatter schema (add/edit/delete/**reorder**); Danger
+ * tab deletes the collection. No group-by/subtitle, and no relation-link UI (posts are neither a class
+ * nor a type, so `entityKind` is left unset).
+ */
+export function postsSettingsAdapter(collection: string): EntitySettingsAdapter {
+	return {
+		noun: 'collection',
+		recordNoun: 'post',
+		hasGroupBy: false,
+		hasSubtitle: false,
+		load: async () => {
+			const detail = await apiGetPostCollection(collection);
+			return {
+				displayName: detail.displayName,
+				icon: detail.icon ?? '',
+				titleBy: detail.displayField ?? '',
+				subtitleBy: '',
+				groupBy: '',
+				fields: Object.keys(detail.schema).map((k) => ({ key: k, label: fieldLabel(k) }))
+			};
+		},
+		save: async ({ displayName, icon, titleBy }) => {
+			await apiUpdatePostCollection(collection, {
+				displayName,
+				icon,
+				displayField: titleBy || ''
+			});
+		},
+		schema: {
+			getSchema: () => apiGetPostCollectionSchema(collection),
+			addField: (body) => apiAddPostCollectionField(collection, body),
+			updateField: (body) => apiUpdatePostCollectionField(collection, body),
+			deleteField: (fieldName, removeFromRecords) =>
+				apiDeletePostCollectionField(collection, fieldName, removeFromRecords),
+			reorderFields: (order) => apiReorderPostCollectionSchema(collection, order)
+		},
+		remove: () => apiDeletePostCollection(collection)
 	};
 }

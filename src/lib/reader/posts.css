@@ -1,0 +1,136 @@
+/*
+ * media-manager/reader/posts.css — layout styles for the `mm-*` photo blocks + code blocks emitted by
+ * the reader's `posts()` render (Item 14). Import once on any page that renders a post's `html`:
+ *
+ *   import 'media-manager/reader/posts.css';
+ *
+ * Layout only — sites theme prose (fonts, colors, spacing) themselves. Full-bleed uses a
+ * viewport-width break-out, so the prose column should be a normal centered container.
+ */
+
+/* Inline single photo, optional caption. */
+.mm-inline {
+	margin: 1.5rem 0;
+}
+.mm-inline img {
+	width: 100%;
+	height: auto;
+	border-radius: 6px;
+	display: block;
+}
+.mm-inline figcaption {
+	font-size: 0.85em;
+	opacity: 0.75;
+	margin-top: 0.4rem;
+}
+
+/* Text beside image (prose column + image column); data-side picks the image side. */
+.mm-beside {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 1.25rem;
+	align-items: center;
+	margin: 1.5rem 0;
+}
+.mm-beside[data-side='left'] {
+	direction: rtl;
+} /* image column first */
+.mm-beside[data-side='left'] > * {
+	direction: ltr;
+}
+.mm-beside img {
+	width: 100%;
+	height: auto;
+	border-radius: 6px;
+	display: block;
+}
+
+/* Side-by-side captioned pair. */
+.mm-pair {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.75rem;
+	margin: 1.5rem 0;
+}
+.mm-pair img {
+	width: 100%;
+	height: auto;
+	border-radius: 6px;
+	display: block;
+}
+.mm-pair figcaption {
+	font-size: 0.85em;
+	opacity: 0.75;
+	margin-top: 0.35rem;
+}
+
+/* Full-bleed banner: breaks out of the prose column, edge to edge. */
+.mm-bleed {
+	position: relative;
+	width: 100vw;
+	left: 50%;
+	margin: 2rem 0 2rem -50vw;
+}
+.mm-bleed img {
+	width: 100%;
+	height: auto;
+	max-height: 70vh;
+	object-fit: cover;
+	display: block;
+}
+.mm-bleed figcaption {
+	position: absolute;
+	left: 1rem;
+	bottom: 1rem;
+	color: #fff;
+	text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 640px) {
+	.mm-beside,
+	.mm-pair {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Code blocks — Shiki emits `pre.shiki`; the unhighlighted fallback is `pre.shiki-plain`. */
+.shiki,
+.shiki-plain {
+	position: relative;
+	overflow-x: auto;
+	border-radius: 8px;
+	padding: 1rem;
+	font-size: 0.9em;
+	line-height: 1.5;
+	margin: 1.5rem 0;
+}
+.shiki-plain {
+	background: #f5f5f5;
+}
+.shiki code,
+.shiki-plain code {
+	font-family:
+		ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* Copy button injected by the enhancer (opt-in; no styles apply until the enhancer runs). */
+.mm-copy-btn {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	padding: 0.2rem 0.5rem;
+	font-size: 0.75rem;
+	line-height: 1.2;
+	border: 1px solid rgba(127, 127, 127, 0.4);
+	border-radius: 5px;
+	background: rgba(127, 127, 127, 0.12);
+	color: inherit;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+.shiki:hover .mm-copy-btn,
+.shiki-plain:hover .mm-copy-btn,
+.mm-copy-btn:focus {
+	opacity: 1;
+}

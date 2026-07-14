@@ -7,6 +7,7 @@ import {
 	listMediaTypeIds,
 	MEDIA_DIR_NAME,
 	RECORDS_DIR_NAME,
+	POSTS_DIR_NAME,
 	GLOBALS_TYPE_ID
 } from './paths.js';
 import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from './settingsFile.js';
@@ -31,7 +32,8 @@ export const RESERVED_TYPE_IDS = new Set<string>([GLOBALS_TYPE_ID]);
 const RESERVED_TYPE_FOLDER_NAMES = new Set<string>([
 	GLOBALS_TYPE_ID,
 	MEDIA_DIR_NAME,
-	RECORDS_DIR_NAME
+	RECORDS_DIR_NAME,
+	POSTS_DIR_NAME
 ]);
 
 /** Media type summary (id = folder name). All top-level media types are now `json`. */

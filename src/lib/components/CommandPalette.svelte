@@ -4,9 +4,10 @@
 	import * as Command from '$lib/components/ui/command/index.js';
 	import { apiListClasses } from '$lib/api/files.js';
 	import { apiListMediaTypes, type MediaTypeSummary } from '$lib/api/client.js';
+	import { apiListPostCollections, type PostCollectionSummary } from '$lib/api/posts.js';
 	import type { ClassSummary } from '$lib/core/types.js';
 	import EntityIcon from '$lib/components/EntityIcon.svelte';
-	import { Files, Layers, SlidersHorizontal, Home } from 'lucide-svelte';
+	import { Files, Layers, SlidersHorizontal, PenLine, Home } from 'lucide-svelte';
 
 	/**
 	 * The global **⌘K command palette** — a cross-sub-app quick switcher mounted once in the root layout.
@@ -22,6 +23,7 @@
 	let loaded = $state(false);
 	let classes = $state<ClassSummary[]>([]);
 	let types = $state<MediaTypeSummary[]>([]);
+	let postCollections = $state<PostCollectionSummary[]>([]);
 
 	/** Record types excluding the reserved globals singleton (it's a sub-app entry, not a type). */
 	const recordTypes = $derived(types.filter((t) => t.id !== 'globals'));
@@ -29,9 +31,10 @@
 	async function loadData() {
 		if (loaded) return;
 		loaded = true;
-		[classes, types] = await Promise.all([
+		[classes, types, postCollections] = await Promise.all([
 			apiListClasses().catch(() => []),
-			apiListMediaTypes().catch(() => [])
+			apiListMediaTypes().catch(() => []),
+			apiListPostCollections().catch(() => [])
 		]);
 	}
 
@@ -72,6 +75,10 @@
 				<Layers class="size-4" />
 				<span>Records</span>
 			</Command.Item>
+			<Command.Item value="Posts" onSelect={() => run('/posts')}>
+				<PenLine class="size-4" />
+				<span>Posts</span>
+			</Command.Item>
 			<Command.Item value="Globals" onSelect={() => run('/globals')}>
 				<SlidersHorizontal class="size-4" />
 				<span>Globals</span>
@@ -103,6 +110,21 @@
 					>
 						<EntityIcon name={t.icon} fallback="file-text" />
 						<span>{t.displayName}</span>
+					</Command.Item>
+				{/each}
+			</Command.Group>
+		{/if}
+
+		{#if postCollections.length}
+			<Command.Separator />
+			<Command.Group heading="Collections">
+				{#each postCollections as c (c.id)}
+					<Command.Item
+						value="collection {c.displayName}"
+						onSelect={() => run(`/posts?collection=${encodeURIComponent(c.id)}`)}
+					>
+						<PenLine class="size-4" />
+						<span>{c.displayName}</span>
 					</Command.Item>
 				{/each}
 			</Command.Group>
