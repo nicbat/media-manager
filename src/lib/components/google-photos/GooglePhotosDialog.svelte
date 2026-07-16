@@ -8,6 +8,7 @@
 	import {
 		apiGetGooglePhotosStatus,
 		apiSaveGoogleCredentials,
+		apiSaveGoogleOAuthLink,
 		apiStartGoogleAuth,
 		apiCreateGooglePhotosSession,
 		apiPollGooglePhotosSession,
@@ -43,6 +44,10 @@
 	let clientId = $state('');
 	let clientSecret = $state('');
 
+	// Saved shortcut to the project's Google Cloud Credentials page (seeded from status).
+	let oauthLink = $state('');
+	let savingLink = $state(false);
+
 	// Connection / Testing-mode hint
 	let status = $state<GoogleStatus | null>(null);
 
@@ -68,6 +73,7 @@
 		try {
 			const s = await apiGetGooglePhotosStatus();
 			status = s;
+			if (!oauthLink) oauthLink = s.oauthProjectUrl ?? '';
 			if (route) {
 				view = !s.hasCreds ? 'setup' : !s.connected ? 'connect' : 'ready';
 			}
@@ -93,6 +99,21 @@
 			error = e instanceof Error ? e.message : 'Failed to save credentials';
 		} finally {
 			busy = false;
+		}
+	}
+
+	/** Persist (or clear) the saved shortcut to the project's Credentials page. */
+	async function saveOAuthLink() {
+		error = null;
+		savingLink = true;
+		try {
+			await apiSaveGoogleOAuthLink(oauthLink.trim());
+			await refreshStatus(false);
+			toast.success('Saved credentials link');
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save the link';
+		} finally {
+			savingLink = false;
 		}
 	}
 
@@ -198,7 +219,18 @@
 					anyone, and they’re stored locally in <code>media/google.json</code>.
 				</p>
 				<ol class="list-decimal space-y-1 pl-5 text-muted-foreground">
-					<li>Open <b>console.cloud.google.com</b> → create a project.</li>
+					<li>
+						Open the
+						<a
+							href="https://console.cloud.google.com/"
+							target="_blank"
+							rel="noopener"
+							class="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+						>
+							Google Cloud Console <ExternalLink class="size-3" />
+						</a>
+						→ create a project.
+					</li>
 					<li>APIs &amp; Services → Library → enable the <b>Google Photos Picker API</b>.</li>
 					<li>
 						OAuth consent screen → External; add yourself as a test user (or set “In production” for
@@ -217,6 +249,35 @@
 				<div class="space-y-1">
 					<Label for="gp-client-secret">Client secret</Label>
 					<Input id="gp-client-secret" type="password" bind:value={clientSecret} />
+				</div>
+				<div class="space-y-1.5 rounded-md border p-3">
+					<div class="flex items-center justify-between gap-2">
+						<Label for="gp-oauth-link">Your credentials page</Label>
+						{#if status?.oauthProjectUrl}
+							<a
+								href={status.oauthProjectUrl}
+								target="_blank"
+								rel="noopener"
+								class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+							>
+								<ExternalLink class="size-3" /> Open
+							</a>
+						{/if}
+					</div>
+					<p class="text-xs text-muted-foreground">
+						Save a shortcut straight to this project’s Credentials page so regenerating a client
+						secret is one click next time.
+					</p>
+					<div class="flex gap-2">
+						<Input
+							id="gp-oauth-link"
+							bind:value={oauthLink}
+							placeholder="https://console.cloud.google.com/apis/credentials?project=…"
+						/>
+						<Button variant="outline" onclick={saveOAuthLink} disabled={savingLink}>
+							{#if savingLink}<Loader2 class="size-4 animate-spin" />{/if} Save
+						</Button>
+					</div>
 				</div>
 			</div>
 			<Dialog.Footer>
@@ -239,6 +300,16 @@
 					Make sure your OAuth client is a <b>Desktop app</b> (it has no “redirect URI” field). A “Web
 					application” client won’t work with the loopback sign-in.
 				</p>
+				{#if status?.oauthProjectUrl}
+					<a
+						href={status.oauthProjectUrl}
+						target="_blank"
+						rel="noopener"
+						class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+					>
+						<ExternalLink class="size-3" /> Open my credentials page
+					</a>
+				{/if}
 			</div>
 			<Dialog.Footer class="sm:justify-between">
 				<Button variant="ghost" size="sm" disabled={busy} onclick={() => (view = 'setup')}>

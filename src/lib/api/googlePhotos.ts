@@ -23,7 +23,8 @@ export const GoogleStatusSchema = z.object({
 	hasCreds: z.boolean(),
 	connected: z.boolean(),
 	tokenObtainedAt: z.string().nullable(),
-	expiresInDays: z.number().nullable()
+	expiresInDays: z.number().nullable(),
+	oauthProjectUrl: z.string().nullable()
 });
 export type GoogleStatus = z.infer<typeof GoogleStatusSchema>;
 
@@ -47,6 +48,27 @@ export async function apiSaveGoogleCredentials(
 		body: JSON.stringify({ clientId, clientSecret })
 	});
 	await jsonOrThrow(res, z.object({ success: z.literal(true) }), 'Failed to save credentials');
+}
+
+/**
+ * PATCH /api/google-photos/credentials — save (or clear) the shortcut to the project's Credentials page.
+ *
+ * @param oauthProjectUrl - An `https://console.cloud.google.com/…` URL, or an empty string to clear it.
+ */
+export async function apiSaveGoogleOAuthLink(
+	oauthProjectUrl: string,
+	fetchFn: typeof fetch = fetch
+): Promise<void> {
+	const res = await fetchFn('/api/google-photos/credentials', {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ oauthProjectUrl })
+	});
+	await jsonOrThrow(
+		res,
+		z.object({ success: z.literal(true) }),
+		'Failed to save the credentials link'
+	);
 }
 
 /** POST /api/google-photos/auth/start — get the consent URL to open in a new tab. */

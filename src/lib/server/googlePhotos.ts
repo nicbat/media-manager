@@ -70,6 +70,28 @@ export interface GoogleStatus {
 	tokenObtainedAt: string | null;
 	/** Days until the 7-day Testing-mode refresh-token expiry (clamped ≥0); null when not connected. */
 	expiresInDays: number | null;
+	/**
+	 * The effective shortcut to the project's Google Cloud **Credentials** page: the user's saved
+	 * `oauthProjectUrl` if set, else a default derived from the client id's project-number prefix, else
+	 * `null` when we have neither. The dialog renders it as a one-click "Open my credentials page".
+	 */
+	oauthProjectUrl: string | null;
+}
+
+/**
+ * Derive a best-effort deep link to a project's Credentials page from an OAuth client id.
+ *
+ * A Desktop client id looks like `123456789012-abc.apps.googleusercontent.com`; the leading digits are
+ * the Google Cloud **project number**, which the console accepts in a `?project=` query. This lets us
+ * offer a working shortcut even before the user saves a custom one.
+ *
+ * @param clientId - The stored OAuth client id (may be undefined).
+ * @returns The derived console URL, or `null` when no project-number prefix can be read.
+ */
+export function deriveProjectCredentialsUrl(clientId: string | undefined): string | null {
+	const projectNumber = clientId?.match(/^(\d+)-/)?.[1];
+	if (!projectNumber) return null;
+	return `https://console.cloud.google.com/apis/credentials?project=${projectNumber}`;
 }
 
 /**
@@ -88,7 +110,9 @@ export async function getStatus(): Promise<GoogleStatus> {
 		const ageDays = (Date.now() - new Date(tokenObtainedAt).getTime()) / 86_400_000;
 		expiresInDays = Math.max(0, Math.ceil(7 - ageDays));
 	}
-	return { hasCreds, connected, tokenObtainedAt, expiresInDays };
+	const oauthProjectUrl =
+		cfg?.oauthProjectUrl?.trim() || deriveProjectCredentialsUrl(cfg?.clientId);
+	return { hasCreds, connected, tokenObtainedAt, expiresInDays, oauthProjectUrl };
 }
 
 /**

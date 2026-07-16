@@ -27,6 +27,12 @@ export interface GoogleConfig {
 	refreshToken?: string;
 	/** ISO timestamp the refresh token was obtained — drives the 7-day Testing-mode expiry hint. */
 	tokenObtainedAt?: string;
+	/**
+	 * A saved shortcut straight to this project's Google Cloud **Credentials** page, so regenerating an
+	 * OAuth client is one click. Optional and user-editable; when absent the UI derives a default from
+	 * the client id's project-number prefix. Must be an `https://console.cloud.google.com/…` URL.
+	 */
+	oauthProjectUrl?: string;
 }
 
 /** Lock file guarding concurrent reads/writes of `google.json`. */
