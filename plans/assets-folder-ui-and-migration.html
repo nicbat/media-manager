@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — Storage-location UI &amp; blob migration</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2129;
+        --line: #2a323c;
+        --ink: #e7edf3;
+        --muted: #9aa7b4;
+        --accent: #ffd23f;
+        --accent-dim: #8a7416;
+        --green: #5fd08a;
+        --blue: #6ea8ff;
+        --pink: #ff8fb1;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 80% -10%, #1a1f27 0%, var(--bg) 55%);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 120px; }
+      header.hero { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 8px; }
+      .kicker { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); max-width: 74ch; }
+      .lead { font-size: 16px; }
+      .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+      .toc a {
+        font: 600 12px/1 var(--mono); text-decoration: none; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 7px 12px; transition: 0.15s;
+      }
+      .toc a:hover { border-color: var(--accent); color: var(--accent); }
+      section { margin-top: 44px; scroll-margin-top: 20px; }
+      h2 { font-size: 21px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+      h2 .n { font: 700 13px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 6px; padding: 5px 8px; }
+      h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+      p { margin: 8px 0; }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+      pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+      pre .c { color: var(--muted); }
+      pre .k { color: var(--pink); }
+      pre .s { color: var(--green); }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+      @media (max-width: 760px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+      ul, ol { margin: 8px 0; padding-left: 22px; }
+      li { margin: 5px 0; }
+      .tag { font: 600 11px/1 var(--mono); border-radius: 999px; padding: 4px 9px; border: 1px solid var(--line); color: var(--muted); }
+      .tag.ok { color: var(--green); border-color: #2c4a37; }
+      .tag.warn { color: var(--accent); border-color: var(--accent-dim); }
+      .tag.info { color: var(--blue); border-color: #2c3c58; }
+      .phase { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
+      .phase .pn { font: 700 12px/1 var(--mono); color: var(--bg); background: var(--blue); border-radius: 6px; padding: 5px 8px; }
+      table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13.5px; }
+      th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+      th { background: var(--panel-2); color: var(--accent); font-weight: 600; }
+      .files { font-family: var(--mono); font-size: 12px; color: var(--blue); }
+      .callout { border-left: 3px solid var(--accent); background: rgba(255,210,63,0.06); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 14px 0; }
+      .callout.risk { border-left-color: var(--pink); background: rgba(255,143,177,0.06); }
+      .callout.good { border-left-color: var(--green); background: rgba(95,208,138,0.06); }
+      hr.soft { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
+      .decision { display: grid; grid-template-columns: 170px 1fr; gap: 10px 16px; margin: 6px 0; }
+      .decision dt { color: var(--accent); font-weight: 600; }
+      .decision dd { margin: 0; }
+      @media (max-width: 760px) { .decision { grid-template-columns: 1fr; gap: 2px; } .decision dd { margin-bottom: 8px; } }
+      .mock { font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 16px; white-space: pre; overflow-x: auto; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="kicker">media-manager · plan</div>
+        <h1>Change where blobs live — from the UI, moving the files with it</h1>
+        <p class="sub lead">
+          A <strong>Storage</strong> section in app Settings that shows where blobs currently live and
+          lets you point them somewhere else — switching classic ↔ static or relocating a static folder
+          — and <strong>migrates the existing blobs</strong> as part of the change (move · copy · leave,
+          your choice). Persists the new location and applies it <strong>without a restart</strong>.
+        </p>
+        <div class="callout good" style="margin-top:18px">
+          <strong>✅ Shipped 2026-08-17 (Item 46).</strong> Built as designed: engine
+          <code>assetsMigrate.ts</code> (<code>migrateBlobs</code>/<code>previewMigration</code>), server glue
+          <code>server/storageConfig.ts</code>, the three <code>/api/settings/storage</code> endpoints, and the
+          <strong>Storage</strong> section in <code>SettingsButton.svelte</code>. The §9 open question resolved to
+          <strong>create-on-first-save</strong>. Verified end-to-end (classic↔static move, conflict-abort 409,
+          create-on-first-save, live env flip with no restart); 283 tests green.
+        </div>
+        <nav class="toc">
+          <a href="#why">Why</a>
+          <a href="#insight">The safe core</a>
+          <a href="#decisions">Decisions</a>
+          <a href="#engine">Migrate engine</a>
+          <a href="#persist">Persist &amp; apply</a>
+          <a href="#api">API</a>
+          <a href="#ui">UI</a>
+          <a href="#phases">Build plan</a>
+          <a href="#site">Your site migration</a>
+          <a href="#risks">Risks</a>
+        </nav>
+      </header>
+
+      <section id="why">
+        <h2><span class="n">0</span> What &amp; why</h2>
+        <div class="card">
+          <p>
+            Static-assets mode shipped (Item 45): blobs <em>can</em> live in a host static folder instead
+            of inside the workspace. But setting or <strong>changing</strong> that location is
+            CLI-and-config-file only, read once at launch, and it <strong>doesn't move existing
+            blobs</strong> — so pointing at a new folder makes every file show as <em>missing</em> until
+            you hand-move the bytes and restart. That's a footgun and there's no in-app control at all.
+          </p>
+          <p>
+            This feature closes both gaps: a <strong>UI to change the location</strong> and a
+            <strong>blob-migration step</strong> that moves the files with it. It also turns the nicb.at
+            cutover's manual "edit config → <code>git mv</code> → restart" into one in-app action (§8).
+          </p>
+        </div>
+      </section>
+
+      <section id="insight">
+        <h2><span class="n">1</span> Why this is safe — the manifest is location-agnostic</h2>
+        <div class="card">
+          <p>
+            The manifest (<span class="files">media/manifest.json</span>) stores only
+            <code>file_name → id</code> per blob — <strong>never a path</strong>. The blob folder is
+            resolved fresh each request from <code>getGlobalFilesDir()</code>
+            (<span class="files">paths.ts:58</span>). So:
+          </p>
+          <ul>
+            <li><strong>Metadata is never at risk.</strong> Records, class memberships, and field values
+              are keyed by manifest id — untouched by any file move.</li>
+            <li><strong>"Missing" is just a derived flag.</strong> If the bytes aren't where the config
+              points, <code>reconcile</code> flags them <code>missing: true</code>; put them there and the
+              flag clears. Fully reversible.</li>
+            <li><strong>The migration is a pure filesystem move of the bytes</strong> + a config update.
+              No manifest rewrite is needed for the relocation itself (ids/filenames don't change).</li>
+          </ul>
+          <p class="muted">
+            That's what makes a one-click "change folder" viable: the risky part isn't the data model —
+            it's doing the bulk file move safely (verify-before-delete) and persisting/applying the new
+            location cleanly.
+          </p>
+        </div>
+      </section>
+
+      <section id="decisions">
+        <h2><span class="n">2</span> Decisions (proposed defaults)</h2>
+        <div class="card">
+          <dl class="decision">
+            <dt>Migration strategy</dt>
+            <dd><strong>Move</strong> (default) · <strong>Copy</strong> (leave originals in place) ·
+              <strong>Leave</strong> (repoint only — "I already moved them"). The user's "configurably"
+              ask — a radio in the change dialog.</dd>
+            <dt>Directions supported</dt>
+            <dd>classic→static, static→classic (turn it off), and static→static (relocate). All three are
+              the same engine over <code>oldDir → newDir</code>.</dd>
+            <dt>Source of truth</dt>
+            <dd>The existing <code>media-manager.config.json</code> <code>assets</code> block — the UI
+              rewrites it. The CLI already reads it; keep one source. (Needs the CLI to pass the config
+              path to the server — see §4.)</dd>
+            <dt>Apply without restart</dt>
+            <dd>After a successful move, the server updates its own <code>process.env.MEDIA_MANAGER_ASSETS_DIR</code>
+              live; <code>getGlobalFilesDir()</code> reads env every call, so the next request uses the
+              new folder. No restart.</dd>
+            <dt>Authority for the move</dt>
+            <dd><strong>By manifest</strong>, like <code>export</code> — only real blobs move; a shared
+              static folder's foreign files (favicon, OG) are never touched.</dd>
+            <dt>Safety</dt>
+            <dd>Copy-then-verify-then-delete (move never deletes a source until its dest copy is
+              confirmed). Manifest lock held for the operation. Abort — don't half-apply — on a
+              destination name conflict.</dd>
+            <dt>v1 scope · no config</dt>
+            <dd>Full change+migrate in <strong>every</strong> launch mode. A config file is <em>not</em>
+              required up front — <code>serve</code> never auto-writes one, so bare-path / <code>MEDIA_MANAGER_ROOT</code>
+              launches have none. In that case the Storage dialog <strong>creates</strong>
+              <code>&lt;root&gt;/media-manager.config.json</code> on first save (same as the <code>config</code>
+              verb) and then applies live. So "no config" isn't a dead-end — setting a storage location is
+              how you get your first config file, which is exactly what you'd want before committing the
+              site anyway.</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section id="engine">
+        <h2><span class="n">3</span> The migration engine</h2>
+        <p>A new storage module — <span class="files">src/lib/storage/assetsMigrate.ts</span> — with one
+          primitive the API calls:</p>
+        <pre><span class="k">migrateBlobs</span>({ toDir, strategy }): Promise&lt;MigrateResult&gt;
+  <span class="c">// strategy: 'move' | 'copy' | 'leave'</span></pre>
+        <p>Algorithm (under the manifest lock):</p>
+        <ol>
+          <li><strong>Resolve</strong> <code>fromDir = getGlobalFilesDir()</code> (current) and the
+            absolute <code>toDir</code>. No-op if equal.</li>
+          <li><strong>Preflight</strong> against the manifest: for each blob <code>file_name</code>, is it
+            present in <code>fromDir</code>? Collect <code>missingAtSource</code>. Is there already a
+            <em>different</em> file of that name in <code>toDir</code>? Collect <code>conflicts</code>.
+            Check free space for copy/move. <strong>If conflicts (or, unless forced, missingAtSource) →
+            abort before touching anything</strong>, returning the report.</li>
+          <li><strong>Transfer</strong> (skip for <code>leave</code>): for each blob,
+            <code>copyFile(from → to)</code> then verify size; for <code>move</code>, unlink the source
+            only after the dest copy verifies. Accumulate <code>moved</code> / <code>copied</code> /
+            <code>failed</code>.</li>
+          <li><strong>Return</strong> a <code>MigrateResult { fromDir, toDir, strategy, moved, copied,
+            skipped, missingAtSource, conflicts, failed }</code>. The caller persists + applies only on a
+            clean result.</li>
+        </ol>
+        <div class="callout">
+          <strong>No manifest rewrite in the move itself.</strong> Because ids/filenames are unchanged,
+          the manifest is already correct for the new location the instant the env flips. A
+          <code>reconcile</code> on the next list confirms it (all present ⇒ nothing flagged).
+        </div>
+        <div class="grid3">
+          <div class="card"><p><span class="tag ok">MOVE</span></p><p class="muted">Bytes relocated; source emptied of manifest blobs. The default — "change the folder."</p></div>
+          <div class="card"><p><span class="tag info">COPY</span></p><p class="muted">Bytes duplicated; originals remain (e.g. keep the in-workspace copy as a backup). Old dir becomes orphaned but intact.</p></div>
+          <div class="card"><p><span class="tag warn">LEAVE</span></p><p class="muted">No bytes touched — just repoint + persist. For when you already moved the files yourself (or are wiring up an already-populated folder).</p></div>
+        </div>
+      </section>
+
+      <section id="persist">
+        <h2><span class="n">4</span> Persist &amp; apply (no restart)</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3 style="margin-top:0">Persist → the config file</h3>
+            <ul>
+              <li>In <code>serve()</code> always pass a config target: <code>env.MEDIA_MANAGER_CONFIG_PATH
+                = resolved.configPath ?? path.join(resolved.root, '${CONFIG_NAME}')</code>. When a config
+                already backs the session that's its path; when none does, it's the <em>intended</em> path
+                at the workspace root — so the server always has a concrete file to write.</li>
+              <li>On a clean migrate, write that file's <code>assets</code> block (<code>dir</code> stored
+                <strong>relative to the config file</strong>, for portability; <code>null</code> assets ⇒
+                remove the block = classic mode). If the file exists, rewrite in place preserving
+                <code>root</code> + formatting; if it doesn't, <strong>create it</strong> with
+                <code>root</code> (relative to its own dir) + the <code>assets</code> block — a
+                first-class config, identical to what the <code>config</code> verb emits.</li>
+              <li>So persistence works in every launch mode; the only "session-only" case is a truly
+                read-only filesystem (rare, surfaced as an error, not a silent no-op).</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0">Apply → live env</h3>
+            <ul>
+              <li>Set <code>process.env.MEDIA_MANAGER_ASSETS_DIR</code> / <code>_BASE_URL</code> in the
+                running server (or unset for classic).</li>
+              <li><code>getGlobalFilesDir()</code> / <code>isStaticAssetsMode()</code> read env per call —
+                the very next request serves from the new folder. No restart, no cache to bust.</li>
+              <li>Broadcast a refresh so open grids re-list (reuses the existing refresh bus).</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="api">
+        <h2><span class="n">5</span> API</h2>
+        <table>
+          <tr><th>Endpoint</th><th>Does</th></tr>
+          <tr>
+            <td class="files">GET /api/settings/storage</td>
+            <td>Current state: <code>{ mode: 'classic'|'static', dir, baseUrl, blobCount, canChange, configPath, configExists }</code>.
+              <code>configPath</code> is always set (existing or the intended create-on-save target);
+              <code>configExists</code> tells the UI whether the first save will <em>create</em> vs rewrite
+              it. <code>canChange=false</code> only if that path isn't writable.</td>
+          </tr>
+          <tr>
+            <td class="files">POST /api/settings/storage/preview</td>
+            <td>Dry-run: given <code>{ toDir, baseUrl, strategy }</code>, return the preflight report
+              (blobCount, conflicts, missingAtSource, freeSpaceOk) <strong>without moving anything</strong>
+              — powers the confirm dialog's summary.</td>
+          </tr>
+          <tr>
+            <td class="files">POST /api/settings/storage</td>
+            <td>Commit: run <code>migrateBlobs</code>, then (on clean result) persist the config + flip the
+              live env. Returns the <code>MigrateResult</code>. Rejects with the report if preflight
+              aborts.</td>
+          </tr>
+        </table>
+        <p class="muted">All three are app-scoped settings endpoints, siblings of the existing
+          <span class="files">/api/settings</span>. A path-traversal guard validates <code>toDir</code>;
+          the move is manifest-authoritative so it can't escape into unrelated files.</p>
+      </section>
+
+      <section id="ui">
+        <h2><span class="n">6</span> UI</h2>
+        <p>A <strong>Storage</strong> section in the existing Settings dialog
+          (<span class="files">SettingsButton.svelte</span>, app-wide prefs) — read state inline, change
+          it via a dedicated confirm dialog so the migration gets a proper preview + progress + result.</p>
+        <div class="mock">┌ Settings ─────────────────────────────────┐
+│ Grid size    ( Small ) [Medium] ( Large )  │
+│ Auto-advance …                             │
+│                                            │
+│ Storage                                    │
+│   Blobs live in:  static/media/  (static)  │
+│   Served at:      /media                    │
+│   142 files · all present                  │
+│                        [ Change location… ] │
+└────────────────────────────────────────────┘
+
+┌ Change storage location ──────────────────┐
+│ New folder  [ ./static/media           ]📁 │  ← resolved: /abs/site/static/media
+│ Base URL    [ /media                   ]   │  (static mode)  ▸ or ( Back to in-workspace )
+│                                            │
+│ Existing 142 files:                        │
+│   (•) Move    ( ) Copy    ( ) Leave        │
+│                                            │
+│ ⚠ 2 name conflicts in target — resolve     │
+│   before moving.        [Cancel] [Preview] │
+└────────────────────────────────────────────┘</div>
+        <ul>
+          <li><strong>Preview first.</strong> The dialog calls <code>/preview</code> and shows the report
+            (count, conflicts, missing, free space) before enabling <strong>Migrate</strong>.</li>
+          <li><strong>Progress + result.</strong> Commit shows a spinner then a summary ("Moved 142 files
+            → static/media") or the abort reason; grids refresh live.</li>
+          <li>Reuse shadcn primitives (<code>Dialog</code>, <code>RadioGroup</code>, <code>Input</code>,
+            <code>Button</code>, <code>AlertDialog</code> for the destructive-move confirm). A folder
+            picker is a stretch (§9) — v1 is a validated path input with a resolved-path preview.</li>
+        </ul>
+      </section>
+
+      <section id="phases">
+        <h2><span class="n">7</span> Build plan</h2>
+        <div class="card" style="margin-bottom:14px">
+          <div class="phase"><span class="pn">P1</span><h3 style="margin:0">Migrate engine + config passthrough</h3></div>
+          <ul>
+            <li><span class="files">assetsMigrate.ts</span> — <code>migrateBlobs</code> (preflight →
+              transfer → report), manifest-authoritative, copy-verify-delete, under the manifest lock.
+              Unit tests for move / copy / leave / conflict-abort / missing-at-source / classic↔static.</li>
+            <li>CLI: pass <code>MEDIA_MANAGER_CONFIG_PATH</code> from <code>serve()</code>; a
+              <code>writeAssetsConfig(configPath, assets|null)</code> that rewrites the block in place.</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="phase"><span class="pn">P2</span><h3 style="margin:0">API</h3></div>
+          <ul>
+            <li>The three <span class="files">/api/settings/storage</span> endpoints; traversal guard;
+              live-env flip + persist on a clean commit; refresh broadcast.</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="phase"><span class="pn">P3</span><h3 style="margin:0">UI</h3></div>
+          <ul>
+            <li>Storage section in <span class="files">SettingsButton.svelte</span> + the change/preview
+              dialog with the move/copy/leave radio, preview report, progress, and result.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="phase"><span class="pn">P4</span><h3 style="margin:0">Docs + parity with the CLI</h3></div>
+          <ul>
+            <li>Fold the same <code>migrateBlobs</code> into a CLI verb (<code>media-manager move-assets
+              &lt;dir&gt;</code>) so headless flows get it too; update <span class="files">FEATURES.md</span>,
+              reader README migration recipe, and the Item 45 follow-up. (Optional but cheap — one engine,
+              two front-ends.)</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="site">
+        <h2><span class="n">8</span> Does this make your site migration easier? — yes</h2>
+        <div class="card">
+          <p><strong>Today's manual cutover:</strong> edit <code>media-manager.config.json</code> · <code>git
+            mv src/assets/…/media/files/* static/media/</code> · restart · then the reader-code change.</p>
+          <p><strong>With this feature:</strong> open the editor on the workspace → Settings → Storage →
+            set <code>static/media</code> + <code>/media</code>, strategy <strong>Move</strong> → one
+            click relocates all 66 blobs, rewrites the config, and applies live. The two fiddly,
+            error-prone steps (hand-moving files, editing the config) vanish.</p>
+          <div class="callout">
+            <strong>Two things it does <em>not</em> do</strong> (by nature, not omission): it moves files
+            on <em>disk</em>, so you still <code>git add static/media &amp;&amp; git commit</code> (git
+            staging isn't the tool's job); and it changes <em>editor storage</em> only — the
+            <strong>reader/host-build change</strong> (drop the <code>?url</code> glob, pass
+            <code>{ assets: { baseUrl } }</code>) is still a code edit in the site. So: materially easier,
+            not fully automated.
+          </div>
+        </div>
+      </section>
+
+      <section id="risks">
+        <h2><span class="n">9</span> Risks &amp; edge cases</h2>
+        <table>
+          <tr><th>Case</th><th>Handling</th></tr>
+          <tr><td><span class="tag warn">partial</span> Interrupted mid-move</td>
+            <td>Copy-verify-delete means no source is lost before its dest exists; worst case is bytes in
+              both dirs (copy done, unlink pending). Manifest is location-agnostic, so re-running the
+              migrate (or a <code>reconcile</code>) recovers. No metadata risk.</td></tr>
+          <tr><td><span class="tag warn">conflict</span> Name already in target</td>
+            <td>Preflight aborts before any transfer with the conflicting names listed — never clobber a
+              different file. (Same-content same-name ⇒ treated as already-there, skipped.)</td></tr>
+          <tr><td><span class="tag warn">missing</span> Blob absent at source</td>
+            <td>Reported; the move proceeds for the rest only if the user accepts (those stay
+              <code>missing</code> until found). Mirrors <code>doctor</code>/<code>export</code> semantics.</td></tr>
+          <tr><td><span class="tag info">orphans</span> Copy / abandoned old dir</td>
+            <td>Old bytes are never auto-deleted except by a confirmed <em>move</em>. After classic→static
+              the empty <code>media/files</code> remains (harmless); after a copy the originals remain by
+              design.</td></tr>
+          <tr><td><span class="tag info">concurrency</span> Move during editing</td>
+            <td>Manifest lock + a "migrating…" state; single-user local tool, so contention is minimal.</td></tr>
+          <tr><td><span class="tag ok">no-config</span> Launched without a config file</td>
+            <td><strong>Resolved: create-on-first-save.</strong> <code>serve</code> never auto-writes a
+              config, so this is the common bare-path / env case — not an edge. First Storage save
+              <em>creates</em> <span class="files">&lt;root&gt;/media-manager.config.json</span> (root +
+              assets), then applies live. The UI labels the button "Set location &amp; create config" when
+              none exists yet. One source of truth throughout.</td></tr>
+          <tr><td><span class="tag info">picker</span> Choosing the folder</td>
+            <td>v1 = validated path input + resolved-path preview. A server-backed folder browser is a
+              stretch (it's a local tool, so listing the FS is acceptable).</td></tr>
+        </table>
+      </section>
+
+      <hr class="soft" />
+      <p class="muted">Rough size: P1 (engine + config write) is the substance and the only part with
+        real failure modes; P2/P3 are thin over it; P4 is a bonus. No on-disk format change — the
+        manifest is untouched; only the blob dir's <em>location</em> and the config's <code>assets</code>
+        block move. Builds directly on Item 45's seam (<code>getGlobalFilesDir</code> / env plumbing).</p>
+    </div>
+  </body>
+</html>

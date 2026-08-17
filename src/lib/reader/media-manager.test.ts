@@ -302,3 +302,57 @@ describe('MediaManager.load — Vite glob classification', () => {
 		expect(mm.globals()?.field('greeting')).toBe('hi');
 	});
 });
+
+describe('MediaManager — static-assets baseUrl mode', () => {
+	/** The fixture with the `?url` asset map removed — so baseUrl synthesis is what resolves `src`. */
+	function noAssets(): ParsedWorkspace {
+		const f = fixture();
+		delete f.assets;
+		return f;
+	}
+
+	it('synthesizes src from baseUrl + filename when no files glob is present', () => {
+		const mm = MediaManager.fromParsed(noAssets(), { assets: { baseUrl: '/media' } });
+		// The on-disk casing is preserved in the URL; the index lookup itself stays case-insensitive.
+		expect(mm.file('f1')?.src).toBe('/media/Sunset.JPEG');
+		expect(mm.file('f2')?.src).toBe('/media/doc.pdf');
+		// dimensions still come off the manifest, unaffected by the URL source
+		expect(mm.file('f1')?.width).toBe(100);
+	});
+
+	it('percent-encodes filenames and strips a trailing slash on baseUrl', () => {
+		const f = noAssets();
+		f.manifest = {
+			version: 2,
+			files: { x: { file_name: 'my photo#1.jpg', classes: [], missing: false } }
+		};
+		const mm = MediaManager.fromParsed(f, { assets: { baseUrl: '/media/' } });
+		expect(mm.file('x')?.src).toBe('/media/my%20photo%231.jpg');
+	});
+
+	it('keeps manifest.missing semantics (src non-null, missing follows the manifest flag)', () => {
+		const mm = MediaManager.fromParsed(noAssets(), { assets: { baseUrl: '/media' } });
+		const f3 = mm.file('f3'); // flagged missing:true in the manifest
+		expect(f3?.src).toBe('/media/gone.png'); // a URL is synthesized...
+		expect(f3?.missing).toBe(true); // ...but it's still reported missing per the manifest
+	});
+
+	it('a files glob wins over baseUrl (baseUrl only fills an otherwise-empty index)', () => {
+		const mm = MediaManager.fromParsed(fixture(), { assets: { baseUrl: '/media' } });
+		expect(mm.file('f1')?.src).toBe('/assets/sunset.hash.jpeg'); // the glob URL, not /media/Sunset.JPEG
+	});
+
+	it('throws WorkspaceFormatError on a case-insensitive filename collision', () => {
+		const f = noAssets();
+		f.manifest = {
+			version: 2,
+			files: {
+				a: { file_name: 'Photo.jpg', classes: [], missing: false },
+				b: { file_name: 'photo.JPG', classes: [], missing: false }
+			}
+		};
+		expect(() => MediaManager.fromParsed(f, { assets: { baseUrl: '/media' } })).toThrow(
+			WorkspaceFormatError
+		);
+	});
+});

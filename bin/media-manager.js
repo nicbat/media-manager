@@ -10,8 +10,10 @@ import { fileURLToPath } from 'node:url';
  *
  * Usage:
  *   media-manager [serve] [root] [--port N] [--body-size-limit N] [--no-open] [--rebuild]
- *   media-manager init [dir]            scaffold a new empty workspace + config
+ *   media-manager init [dir]            scaffold a new empty workspace + config (auto-detects static assets)
  *   media-manager config [dir]          write a config for a workspace you already have (--force to overwrite)
+ *                                       [--classic | --assets-dir <dir> --assets-base-url <url>]
+ *   media-manager export <dest>         copy the workspace + reunite blobs into one self-contained folder
  *   media-manager build                 (re)build build/ and exit, without serving
  *   media-manager doctor
  *
@@ -34,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, '..');
 const buildPath = path.join(pkgRoot, 'build');
 const CONFIG_NAME = 'media-manager.config.json';
-const VERBS = new Set(['serve', 'init', 'doctor', 'config', 'build']);
+const VERBS = new Set(['serve', 'init', 'doctor', 'config', 'build', 'export']);
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +54,11 @@ let portFlag;
 let noOpen = false;
 let rebuild = false;
 let force = false;
+/** `config`/`init`: skip static-assets auto-detection (write a plain classic config). */
+let classic = false;
+/** `config`/`init`: explicit static-assets overrides (skip / override auto-detection). */
+let assetsDirFlag;
+let assetsBaseUrlFlag;
 const passthrough = [];
 
 for (let i = 0; i < argv.length; i++) {
@@ -78,6 +85,18 @@ for (let i = 0; i < argv.length; i++) {
 	}
 	if (arg === '--force') {
 		force = true;
+		continue;
+	}
+	if (arg === '--classic') {
+		classic = true;
+		continue;
+	}
+	if (arg === '--assets-dir') {
+		assetsDirFlag = argv[++i];
+		continue;
+	}
+	if (arg === '--assets-base-url') {
+		assetsBaseUrlFlag = argv[++i];
 		continue;
 	}
 	if (arg.startsWith('--')) {
@@ -120,14 +139,15 @@ function findConfig(startDir) {
 }
 
 /**
- * Load + validate a `media-manager.config.json`. `root` is resolved **relative to the config file's
- * directory** (not cwd), so running from a subdirectory still finds the right data.
+ * Read + JSON-parse the nearest `media-manager.config.json` (walking up from `startDir`). Returns the
+ * raw parsed object plus its path, or null if none exists. Throws only on malformed JSON — callers
+ * decide whether that is fatal (it is when `root` comes from the config; it is best-effort when
+ * reading the optional `assets` block for an arg/env-resolved root).
  *
  * @param {string} startDir - Where to begin the upward search.
- * @returns {{ configPath: string, root: string } | null}
- * @throws If the config is present but malformed (bad JSON or missing/empty `root`).
+ * @returns {{ configPath: string, parsed: any } | null}
  */
-function loadConfig(startDir) {
+function readConfigRaw(startDir) {
 	const configPath = findConfig(startDir);
 	if (!configPath) return null;
 	let parsed;
@@ -136,26 +156,148 @@ function loadConfig(startDir) {
 	} catch (e) {
 		throw new Error(`Invalid JSON in ${configPath}: ${e.message}`);
 	}
-	if (!parsed || typeof parsed.root !== 'string' || parsed.root.trim() === '') {
-		throw new Error(`${configPath} must set a non-empty "root" string.`);
-	}
-	return { configPath, root: path.resolve(path.dirname(configPath), parsed.root) };
+	return { configPath, parsed };
 }
 
 /**
- * Resolve the data root by the documented precedence: arg → env → config file → null.
+ * Parse the optional `assets` block from a raw config object. Static-assets mode — blobs stored in the
+ * host's served static folder instead of inside the workspace — is **opt-in**: it activates only when
+ * `assets.dir` is a non-empty string. `dir` is resolved **relative to the config file's directory**
+ * (like `root`); `baseUrl` is the web-address prefix the reader uses (defaults to `/media`).
+ *
+ * @param {any} parsed - The parsed config JSON.
+ * @param {string} configDir - Directory containing the config file (base for the relative `dir`).
+ * @returns {{ dir: string, baseUrl: string } | null} Absolute assets config, or null for classic mode.
+ */
+function parseAssetsBlock(parsed, configDir) {
+	const a = parsed && typeof parsed === 'object' ? parsed.assets : null;
+	if (!a || typeof a !== 'object') return null;
+	if (typeof a.dir !== 'string' || a.dir.trim() === '') return null;
+	const dir = path.resolve(configDir, a.dir);
+	const baseUrl =
+		typeof a.baseUrl === 'string' && a.baseUrl.trim() !== '' ? a.baseUrl.trim() : '/media';
+	return { dir, baseUrl };
+}
+
+/**
+ * Auto-detect a host project's served static folder, to propose a static-assets config. Recognizes
+ * SvelteKit (`svelte.config.*` + `static/`), Next.js / Astro (`*.config.*` + `public/`), and a bare
+ * `static/` or `public/`. Always proposes a **dedicated `media` subfolder** (never the shared root of
+ * `static/`/`public/`) so the manifest reconcile can't adopt the site's own assets.
+ *
+ * @param {string} projectDir - The host repo root (where the config file lives = cwd for `config`/`init`).
+ * @returns {{ framework: string, dir: string, baseUrl: string } | null} A suggestion (relative POSIX
+ *   `dir`) or null when nothing looks like a static host.
+ */
+function detectAssets(projectDir) {
+	const has = (p) => fs.existsSync(path.join(projectDir, p));
+	let names = [];
+	try {
+		names = fs.readdirSync(projectDir);
+	} catch {
+		return null;
+	}
+	const hasConfig = (re) => names.some((n) => re.test(n));
+	const svelte = hasConfig(/^svelte\.config\./);
+	const next = hasConfig(/^next\.config\./);
+	const astro = hasConfig(/^astro\.config\./);
+
+	let base = null;
+	let framework = 'static host';
+	if (svelte && has('static')) {
+		base = 'static';
+		framework = 'SvelteKit';
+	} else if ((next || astro) && has('public')) {
+		base = 'public';
+		framework = next ? 'Next.js' : 'Astro';
+	} else if (has('static')) {
+		base = 'static';
+	} else if (has('public')) {
+		base = 'public';
+	}
+	if (!base) return null;
+	return { framework, dir: `./${base}/media`, baseUrl: '/media' };
+}
+
+/**
+ * Decide the static-assets config to write for `config`/`init`: `--classic` disables it; explicit
+ * `--assets-dir` (+ optional `--assets-base-url`) overrides detection; otherwise auto-detect from the
+ * project dir. Returns null for classic (in-workspace) storage.
+ *
+ * @param {string} projectDir - Where the config lives (cwd).
+ * @returns {{ framework?: string, dir: string, baseUrl: string } | null}
+ */
+function chooseAssets(projectDir) {
+	if (classic) return null;
+	if (assetsDirFlag) {
+		const dir = assetsDirFlag.startsWith('.') ? assetsDirFlag : `./${assetsDirFlag}`;
+		return { dir, baseUrl: assetsBaseUrlFlag || '/media' };
+	}
+	const detected = detectAssets(projectDir);
+	if (detected && assetsBaseUrlFlag) detected.baseUrl = assetsBaseUrlFlag;
+	return detected;
+}
+
+/**
+ * Resolve the data root by the documented precedence: arg → env → config file → null. Also resolves
+ * the optional static-`assets` block, which lives **only** in the config file — so it is read
+ * regardless of how `root` resolved (fixing a short-circuit where an arg/env root skipped the config
+ * entirely, silently disabling static mode). To avoid mis-routing blobs, `assets` is applied **only
+ * when the config's own `root` resolves to the same workspace** we are about to serve — an unrelated
+ * up-tree config can't hijack an explicit arg/env root.
  *
  * @param {string | undefined} explicitArg - A positional root path, if given.
- * @returns {{ root: string, source: 'arg' | 'env' | 'config', configPath?: string } | null}
+ * @returns {{ root: string, source: 'arg' | 'env' | 'config', configPath?: string,
+ *            assets?: { dir: string, baseUrl: string } } | null}
+ * @throws If `root` comes from the config and the config is malformed / missing a non-empty `root`.
  */
 function resolveRoot(explicitArg) {
-	if (explicitArg) return { root: path.resolve(explicitArg), source: 'arg' };
-	if (process.env.MEDIA_MANAGER_ROOT) {
-		return { root: path.resolve(process.env.MEDIA_MANAGER_ROOT), source: 'env' };
+	// Read the config once (best-effort). Malformed JSON throws here; that is only fatal if `root` ends
+	// up coming from the config — otherwise we proceed in classic mode.
+	let cfg = null;
+	let cfgError = null;
+	try {
+		cfg = readConfigRaw(process.cwd());
+	} catch (e) {
+		cfgError = e;
 	}
-	const cfg = loadConfig(process.cwd());
-	if (cfg) return { root: cfg.root, source: 'config', configPath: cfg.configPath };
-	return null;
+
+	let root;
+	let source;
+	let configPath;
+	if (explicitArg) {
+		root = path.resolve(explicitArg);
+		source = 'arg';
+	} else if (process.env.MEDIA_MANAGER_ROOT) {
+		root = path.resolve(process.env.MEDIA_MANAGER_ROOT);
+		source = 'env';
+	} else {
+		if (cfgError) throw cfgError;
+		if (!cfg) return null;
+		const r = cfg.parsed?.root;
+		if (typeof r !== 'string' || r.trim() === '') {
+			throw new Error(`${cfg.configPath} must set a non-empty "root" string.`);
+		}
+		root = path.resolve(path.dirname(cfg.configPath), r);
+		source = 'config';
+		configPath = cfg.configPath;
+	}
+
+	// Resolve the assets block from that same config — but apply it only when the config describes the
+	// very workspace we resolved (guards against an unrelated up-tree config hijacking an arg/env root).
+	let assets;
+	if (cfg && !cfgError) {
+		const configDir = path.dirname(cfg.configPath);
+		const parsedAssets = parseAssetsBlock(cfg.parsed, configDir);
+		const cfgRoot =
+			typeof cfg.parsed?.root === 'string' ? path.resolve(configDir, cfg.parsed.root) : null;
+		if (parsedAssets && cfgRoot && cfgRoot === root) {
+			assets = parsedAssets;
+			if (!configPath) configPath = cfg.configPath;
+		}
+	}
+
+	return { root, source, configPath, assets };
 }
 
 /** Print CLI usage (for `--help` / `-h` / `help`). */
@@ -167,11 +309,19 @@ Usage:
   media-manager [serve] [root] [options]   Run the app (default verb)
   media-manager init [dir]                 Scaffold a NEW empty workspace + config
   media-manager config [dir]               Write a config for a workspace you ALREADY have
+  media-manager export <dest>              Copy the workspace + reunite blobs into one folder
   media-manager build                      (Re)build build/ and exit, without serving
-  media-manager doctor                     Diagnose root / config / build (no server)
+  media-manager doctor                     Diagnose root / config / build / assets (no server)
 
-Root resolution (serve · doctor):
+Root resolution (serve · doctor · export):
   explicit arg → MEDIA_MANAGER_ROOT env → ${CONFIG_NAME} (walked up from cwd) → friendly error
+
+Static assets (optional, in ${CONFIG_NAME}):
+  { "root": "…", "assets": { "dir": "./static/media", "baseUrl": "/media" } }
+  Stores blobs in the host's served static folder (CDN-served, not bundled) instead of
+  <root>/media/files. Opt-in; omit "assets" for classic in-workspace storage.
+  config · init auto-detect it (SvelteKit static/, Next/Astro public/); override with
+  --assets-dir <dir> / --assets-base-url <url>, or --classic to force in-workspace storage.
 
 Options:
   --port N             Pin a fixed port (default: an ephemeral OS-assigned port)
@@ -287,6 +437,25 @@ async function serve() {
 	const env = { ...process.env };
 	env.MEDIA_MANAGER_ROOT = resolved.root;
 
+	// Tell the server which config file backs this session, so the in-app Storage settings can rewrite
+	// its `assets` block (or CREATE it on first save when none exists yet). Always a concrete path: the
+	// resolved config when one was consulted, else the conventional `<root>/media-manager.config.json`.
+	env.MEDIA_MANAGER_CONFIG_PATH = resolved.configPath ?? path.join(resolved.root, CONFIG_NAME);
+
+	// Static-assets mode: point the blob subsystem at the configured host static dir. Create it once,
+	// visibly, up front — never let a lazy upload `mkdir` silently materialize a mistyped path.
+	if (resolved.assets) {
+		env.MEDIA_MANAGER_ASSETS_DIR = resolved.assets.dir;
+		env.MEDIA_MANAGER_ASSETS_BASE_URL = resolved.assets.baseUrl;
+		if (!fs.existsSync(resolved.assets.dir)) {
+			fs.mkdirSync(resolved.assets.dir, { recursive: true });
+			console.log(`[media-manager] created static assets dir: ${resolved.assets.dir}`);
+		}
+		console.log(
+			`[media-manager] static assets: blobs in ${resolved.assets.dir} (reader baseUrl ${resolved.assets.baseUrl})`
+		);
+	}
+
 	if (bodySizeLimit) {
 		env.BODY_SIZE_LIMIT = bodySizeLimit;
 	} else if (!env.BODY_SIZE_LIMIT) {
@@ -347,14 +516,28 @@ async function serve() {
  * @param {boolean} overwrite - Overwrite an existing config.
  * @returns {{ configPath: string, root: string, wrote: boolean }}
  */
-function writeConfigFile(target, overwrite) {
+function writeConfigFile(target, overwrite, assets) {
 	const configPath = path.join(process.cwd(), CONFIG_NAME);
 	const rel = path.relative(process.cwd(), target) || '.';
 	const relPosix = rel.split(path.sep).join('/');
 	const root = relPosix.startsWith('.') ? relPosix : `./${relPosix}`;
 	if (fs.existsSync(configPath) && !overwrite) return { configPath, root, wrote: false };
-	fs.writeFileSync(configPath, JSON.stringify({ root }, null, 2) + '\n');
+	const doc = assets ? { root, assets: { dir: assets.dir, baseUrl: assets.baseUrl } } : { root };
+	fs.writeFileSync(configPath, JSON.stringify(doc, null, 2) + '\n');
 	return { configPath, root, wrote: true };
+}
+
+/**
+ * Create the dedicated static-assets subfolder (relative `dir` resolved against cwd) so blobs have a
+ * home the moment the editor runs — enforcing a **dedicated** dir rather than a shared `static/` root.
+ *
+ * @param {{ dir: string, baseUrl: string, framework?: string }} assets
+ */
+function ensureAssetsDir(assets) {
+	const absDir = path.resolve(process.cwd(), assets.dir);
+	fs.mkdirSync(absDir, { recursive: true });
+	const detail = assets.framework ? `detected ${assets.framework}` : 'explicit';
+	console.log(`✔ assets      ${assets.dir}  (served at ${assets.baseUrl}; ${detail})`);
 }
 
 /** Does `dir` look like an already-initialized media-manager workspace? */
@@ -375,13 +558,15 @@ function init() {
 	const target = path.resolve(rootArg || './media_manager');
 	fs.mkdirSync(target, { recursive: true });
 
-	const { configPath, wrote } = writeConfigFile(target, force);
+	const assets = chooseAssets(process.cwd());
+	const { configPath, wrote } = writeConfigFile(target, force, assets);
 	console.log(`✔ workspace   ${target}`);
 	console.log(
 		wrote
 			? `✔ config      ${configPath}`
 			: `· config      ${configPath} already exists, left as-is`
 	);
+	if (wrote && assets) ensureAssetsDir(assets);
 	console.log(
 		'\nNext: run  media-manager  to start (it will build + heal the workspace on first launch).'
 	);
@@ -401,13 +586,15 @@ function config() {
 		process.exit(1);
 	}
 
-	const { configPath, root, wrote } = writeConfigFile(target, force);
+	const assets = chooseAssets(process.cwd());
+	const { configPath, root, wrote } = writeConfigFile(target, force, assets);
 	if (!wrote) {
 		console.error(`✘ ${configPath} already exists. Re-run with --force to overwrite.`);
 		process.exit(1);
 	}
 
 	console.log(`✔ config      ${configPath}  → root: ${root}`);
+	if (assets) ensureAssetsDir(assets);
 	if (!looksLikeWorkspace(target)) {
 		console.log(
 			`· note: ${target} has no media/ · globals/ · records/ yet — it'll be healed on first serve.`
@@ -433,6 +620,8 @@ function doctor() {
 
 	const tick = (ok) => (ok ? '✔' : '✘');
 	if (resolved.source === 'config') console.log(`✔ config      ${resolved.configPath}`);
+	else if (resolved.configPath)
+		console.log(`· config      root via ${resolved.source}; assets via ${resolved.configPath}`);
 	else console.log(`· config      (using ${resolved.source}; no ${CONFIG_NAME} consulted)`);
 
 	const rootExists = fs.existsSync(resolved.root);
@@ -455,19 +644,194 @@ function doctor() {
 		);
 	}
 
+	// Static-assets mode (opt-in): report where blobs live and validate the dir against the manifest.
+	// A missing-on-disk blob is a hard failure (it becomes a runtime 404 — the build-time existence
+	// check the bundler used to give us); foreign files hint the dir isn't dedicated (reconcile-safe).
+	let assetsProblems = 0;
+	if (resolved.assets) {
+		const dir = resolved.assets.dir;
+		const dirExists = fs.existsSync(dir);
+		console.log(
+			`${dirExists ? '✔' : '!'} assets      static mode — blobs in ${dir}` +
+				(dirExists ? '' : ' (missing — created on first serve)')
+		);
+		console.log(`            served at ${resolved.assets.baseUrl} (reader baseUrl)`);
+
+		if (dirExists && rootExists) {
+			const manifestNames = new Set();
+			try {
+				const m = JSON.parse(
+					fs.readFileSync(path.join(resolved.root, 'media', 'manifest.json'), 'utf-8')
+				);
+				for (const e of Object.values(m.files || {})) {
+					if (e && typeof e.file_name === 'string') manifestNames.add(e.file_name);
+				}
+			} catch {
+				/* no manifest yet — first serve will create it */
+			}
+			const diskNames = fs
+				.readdirSync(dir, { withFileTypes: true })
+				.filter((d) => d.isFile() && !d.name.startsWith('.') && !d.name.endsWith('.lock'))
+				.map((d) => d.name);
+			const diskSet = new Set(diskNames);
+			const missingOnDisk = [...manifestNames].filter((n) => !diskSet.has(n));
+			const foreign = diskNames.filter((n) => !manifestNames.has(n));
+			const lower = diskNames.map((n) => n.toLowerCase());
+			const collisions = lower.filter((n, i) => lower.indexOf(n) !== i);
+
+			if (missingOnDisk.length) {
+				assetsProblems++;
+				console.log(
+					`✘ assets      ${missingOnDisk.length} manifest blob(s) absent from the dir — these 404 at runtime` +
+						`\n            e.g. ${missingOnDisk.slice(0, 3).join(', ')}`
+				);
+			}
+			if (collisions.length) {
+				assetsProblems++;
+				console.log(
+					`✘ assets      case-insensitive filename collision(s): ${[...new Set(collisions)].slice(0, 3).join(', ')}`
+				);
+			}
+			if (foreign.length) {
+				console.log(
+					`! assets      ${foreign.length} file(s) in the dir are not manifest blobs — is this a dedicated media/ subfolder?` +
+						`\n            e.g. ${foreign.slice(0, 3).join(', ')}`
+				);
+			}
+			if (!missingOnDisk.length && !collisions.length && !foreign.length && manifestNames.size) {
+				console.log(`✔ assets      ${manifestNames.size} blob(s) present, no strays`);
+			}
+		}
+	} else {
+		console.log('· assets      classic mode — blobs in <root>/media/files');
+	}
+
 	const built = fs.existsSync(buildPath);
 	console.log(
 		`${built ? '✔' : '!'} build       ${built ? 'present' : 'missing — will build on first serve (or --rebuild)'}`
 	);
 	console.log('✔ port        ephemeral (OS-assigned; pin with --port N)');
 
-	process.exit(rootExists ? 0 : 1);
+	process.exit(rootExists && assetsProblems === 0 ? 0 : 1);
 }
 
 /** `build`: (re)build the Node server (`build/`) and exit, without starting the server. */
 function build() {
 	ensureBuilt(true);
 	console.log('✔ build complete.');
+}
+
+/**
+ * `export <dest>`: write a **canonical, re-openable** copy of the current workspace to `<dest>` —
+ * reuniting the blobs (which in static-assets mode live outside the workspace) back into
+ * `<dest>/media/files/`, so the result is a self-contained classic-layout tree you can archive, hand
+ * off, or open with `media-manager <dest>`.
+ *
+ * Source resolution: the workspace is resolved from the env/config (the workspace you're "in"), and the
+ * single positional is the **destination**. Blobs are copied **by manifest** (not by scanning the dir),
+ * so a shared static folder's foreign files never leak into the export; a manifest blob absent from the
+ * source is reported (and exits non-zero) rather than silently dropped. The per-workspace Google secret
+ * (`media/google.json`) and `.lock` files are excluded.
+ */
+function exportWorkspace() {
+	const dest = rootArg ? path.resolve(rootArg) : null;
+	if (!dest) {
+		console.error('✘ export needs a destination:  media-manager export <dest>');
+		process.exit(1);
+	}
+
+	let resolved;
+	try {
+		resolved = resolveRoot(undefined); // source = env/config, never the positional (that's the dest)
+	} catch (e) {
+		console.error(`✘ config      ${e.message}`);
+		process.exit(1);
+	}
+	if (!resolved) {
+		printNoRoot();
+		process.exit(1);
+	}
+	const root = resolved.root;
+	if (!fs.existsSync(root)) {
+		console.error(`✘ Root does not exist: ${root} (from ${resolved.source})`);
+		process.exit(1);
+	}
+
+	const blobDir = resolved.assets ? resolved.assets.dir : path.join(root, 'media', 'files');
+
+	// Reject a destination that overlaps EITHER the workspace or (in static mode) the served assets dir
+	// — exporting into the CDN-served static folder would dump the JSON tree into it.
+	const overlaps = (a, b) => a === b || a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
+	if (overlaps(dest, root) || overlaps(dest, blobDir)) {
+		console.error(`✘ destination overlaps the source workspace or its assets dir: ${dest}`);
+		process.exit(1);
+	}
+	if (fs.existsSync(dest) && fs.readdirSync(dest).length > 0 && !force) {
+		console.error(`✘ destination is not empty: ${dest} (re-run with --force to overwrite)`);
+		process.exit(1);
+	}
+
+	// Copy the JSON tree, excluding the in-workspace blob subtree (populated below), the Google secret,
+	// and lock files.
+	const filesSubtree = path.join(root, 'media', 'files');
+	const googleSecret = path.join(root, 'media', 'google.json');
+	fs.cpSync(root, dest, {
+		recursive: true,
+		force: true,
+		filter: (src) => {
+			if (src === filesSubtree || src.startsWith(filesSubtree + path.sep)) return false;
+			if (src === googleSecret) return false;
+			if (src.endsWith('.lock')) return false;
+			return true;
+		}
+	});
+	console.log(`✔ workspace   JSON tree → ${dest}`);
+
+	// Reunite blobs by manifest.
+	let manifestNames = [];
+	try {
+		const m = JSON.parse(fs.readFileSync(path.join(root, 'media', 'manifest.json'), 'utf-8'));
+		manifestNames = Object.values(m.files || {})
+			.map((e) => (e && typeof e.file_name === 'string' ? e.file_name : null))
+			.filter(Boolean);
+	} catch {
+		console.log('· manifest    none found — exporting JSON only (no blobs)');
+	}
+
+	const destFiles = path.join(dest, 'media', 'files');
+	fs.mkdirSync(destFiles, { recursive: true });
+	const missing = [];
+	const seenLower = new Map();
+	const collisions = new Set();
+	let copied = 0;
+	for (const name of manifestNames) {
+		const srcBlob = path.join(blobDir, name);
+		if (!fs.existsSync(srcBlob)) {
+			missing.push(name);
+			continue;
+		}
+		const key = name.toLowerCase();
+		if (seenLower.has(key) && seenLower.get(key) !== name) collisions.add(key);
+		seenLower.set(key, name);
+		fs.copyFileSync(srcBlob, path.join(destFiles, name));
+		copied++;
+	}
+
+	console.log(`✔ blobs       ${copied}/${manifestNames.length} copied from ${blobDir}`);
+	if (collisions.size) {
+		console.log(
+			`! blobs       case-insensitive collision(s) may clobber on a case-insensitive FS: ${[...collisions].slice(0, 3).join(', ')}`
+		);
+	}
+	if (missing.length) {
+		console.log(
+			`✘ blobs       ${missing.length} manifest blob(s) absent from the source: ${missing.slice(0, 5).join(', ')}`
+		);
+	}
+
+	const openRel = path.relative(process.cwd(), dest) || dest;
+	console.log(`\nRe-open with:  media-manager ${openRel}`);
+	process.exit(missing.length ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +843,7 @@ async function main() {
 	if (verb === 'config') return config();
 	if (verb === 'doctor') return doctor();
 	if (verb === 'build') return build();
+	if (verb === 'export') return exportWorkspace();
 	return serve();
 }
 

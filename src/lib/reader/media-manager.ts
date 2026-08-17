@@ -15,7 +15,7 @@
 
 import { Collection } from './collection.js';
 import { MediaItem, MMRecord, type ReaderContext } from './items.js';
-import { parseManifest, type Manifest } from './manifest.js';
+import { parseManifest, WorkspaceFormatError, type Manifest } from './manifest.js';
 import {
 	PostCollection,
 	DEFAULT_POSTS_THEME,
@@ -101,6 +101,19 @@ export interface WorkspaceGlobs {
 export interface ReaderOptions {
 	/** Posts sub-app rendering options (fenced-code theme). */
 	posts?: PostsOptions;
+	/**
+	 * **Static-assets mode.** Resolve every blob's URL from a base path instead of a bundler `?url`
+	 * glob. When `baseUrl` is set *and* no `files` glob populated the asset map, the reader synthesizes
+	 * `` `${baseUrl}/${encodeURIComponent(file_name)}` `` for every manifest entry — so the host serves
+	 * blobs from a CDN / static folder and never bundles them into a build (the fix for size-capped
+	 * serverless functions). A `files` glob, when present, always wins. See README "Static assets".
+	 */
+	assets?: {
+		/** Web-address prefix the blobs are served at (e.g. `/media`). A trailing slash is optional. */
+		baseUrl: string;
+		/** Percent-encode each filename (default `true`). Set `false` only if names are pre-encoded. */
+		encode?: boolean;
+	};
 }
 
 export class MediaManager implements ReaderContext {
@@ -131,6 +144,31 @@ export class MediaManager implements ReaderContext {
 		this.assetIndex = new Map();
 		for (const [filename, url] of Object.entries(parsed.assets ?? {})) {
 			if (typeof url === 'string') this.assetIndex.set(filename.toLowerCase(), url);
+		}
+
+		// Static-assets mode: when no `?url` glob populated the index, synthesize each blob's URL from
+		// the manifest + a base path (`${baseUrl}/${encodeURIComponent(file_name)}`). The index is keyed
+		// on the lowercased basename, so two filenames that collide case-insensitively are ambiguous —
+		// fail loudly rather than silently serve one blob for both.
+		if (this.assetIndex.size === 0 && options?.assets?.baseUrl) {
+			const { baseUrl, encode = true } = options.assets;
+			const prefix = baseUrl.replace(/\/+$/, '');
+			const originalByKey = new Map<string, string>();
+			for (const entry of Object.values(this.manifest.files)) {
+				const name = entry.file_name;
+				if (!name) continue;
+				const key = name.toLowerCase();
+				const prior = originalByKey.get(key);
+				if (prior !== undefined && prior !== name) {
+					throw new WorkspaceFormatError(
+						`Static-assets baseUrl mode: filename collision on '${key}' ('${prior}' vs '${name}'). ` +
+							'The asset index is keyed on lowercased basename — rename one file so they differ ' +
+							'case-insensitively, or supply a `files` map instead.'
+					);
+				}
+				originalByKey.set(key, name);
+				this.assetIndex.set(key, `${prefix}/${encode ? encodeURIComponent(name) : name}`);
+			}
 		}
 
 		this.classData = new Map();

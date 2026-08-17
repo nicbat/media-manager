@@ -9,6 +9,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { SettingsIcon } from 'lucide-svelte';
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
+	import StorageSettings from '$lib/components/StorageSettings.svelte';
 
 	/**
 	 * The single, global Settings dialog used everywhere (dashboard, the All Files hub, and every
@@ -116,6 +117,10 @@
 					</Select.Root>
 				</div>
 			</div>
+
+			<Separator />
+
+			<StorageSettings />
 
 			<Separator />
 

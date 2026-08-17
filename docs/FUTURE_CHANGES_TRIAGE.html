@@ -411,7 +411,7 @@
 		<header class="top">
 			<h1><span class="pink">Future Changes</span> — Triage Board</h1>
 			<p class="sub">
-				Live read of <code>docs/FUTURE_CHANGES.md</code> · 45 items classified by status, size,
+				Live read of <code>docs/FUTURE_CHANGES.md</code> · 47 items classified by status, size,
 				cluster, and open-question load · generated 2026-06-29
 			</p>
 			<div class="stats" id="stats"></div>
@@ -954,6 +954,24 @@
 					use: 3,
 					group: 'storage',
 					note: "Enabler — shareable/bookmarkable URLs + unblocks clean 'go-to-file' (26) and mobile (29). Partly shipped (?record=)."
+				},
+				{
+					n: 45,
+					name: 'Static-assets blob store + export',
+					status: 'done',
+					size: 'M',
+					use: 4,
+					group: 'assets',
+					note: 'Shipped 2026-08-07 (media-manager side) — opt-in `assets:{dir,baseUrl}` config stores blobs in the host static folder (CDN-served, not bundled; fixes size-capped serverless fns); config/init auto-detect, doctor validates, `export` reunites; reader `baseUrl` mode. nicb.at cutover (P7) is out-of-repo.'
+				},
+				{
+					n: 46,
+					name: 'Storage-location UI + blob migration',
+					status: 'done',
+					size: 'M',
+					use: 4,
+					group: 'assets',
+					note: 'Shipped 2026-08-17 — Storage section in app Settings changes where blobs live (classic↔static, relocate) and MOVES the blobs with it (move/copy/leave). Engine `migrateBlobs` (manifest-authoritative, copy→verify→delete, aborts on conflict/missing); persists to config `assets` block (creates it on first save) + flips live env (no restart). API `/api/settings/storage(+/preview)`. Makes the nicb.at cutover one click. Builds on Item 45.'
 				}
 			];
 

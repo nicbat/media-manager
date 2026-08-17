@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 
-import { getGlobalFilesDir, getManifestPath } from './paths.js';
+import { getGlobalFilesDir, getManifestPath, isStaticAssetsMode } from './paths.js';
 import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { newFileId, type FileId } from '$lib/core/ids.js';
@@ -270,9 +270,22 @@ export interface ReconcileResult {
  * New disk files are minted ids; entries whose blob vanished are flagged `missing: true` (kept so
  * missing-file rows still resolve a name); entries that reappear clear the flag. Written only on change.
  *
+ * **Adoption gating (static-assets mode):** auto-adopting every unknown disk basename is correct when
+ * the blob dir is the workspace's private `media/files/`, but *dangerous* when it points at a host's
+ * shared static folder — the site's own `favicon.png` / `og-image.jpg` would silently enter the
+ * manifest on the next list. So adoption defaults **off** whenever {@link isStaticAssetsMode} is true;
+ * in that mode blobs enter the manifest only via explicit registration (upload → `registerBlob`) or a
+ * future import. Missing-flagging always runs (an entry whose blob is gone is still flagged). Pass
+ * `{ adopt }` to force either behavior (tests, `export`).
+ *
  * @param diskNames - Basenames of real blobs currently in the global store.
+ * @param opts.adopt - Override the default adoption policy (`!isStaticAssetsMode()`).
  */
-export async function reconcile(diskNames: string[]): Promise<ReconcileResult> {
+export async function reconcile(
+	diskNames: string[],
+	opts?: { adopt?: boolean }
+): Promise<ReconcileResult> {
+	const adopt = opts?.adopt ?? !isStaticAssetsMode();
 	return await withFileLock(manifestLockPath(), async () => {
 		const manifest = await readManifest();
 		const diskSet = new Set(diskNames);
@@ -280,18 +293,20 @@ export async function reconcile(diskNames: string[]): Promise<ReconcileResult> {
 
 		const knownNames = new Set(Object.values(manifest.files).map((e) => e.file_name));
 		const added: { file_id: string; file_name: string }[] = [];
-		for (const name of diskNames) {
-			if (knownNames.has(name)) continue;
-			const id = newFileId();
-			manifest.files[id] = {
-				file_name: name,
-				classes: [],
-				missing: false,
-				created_at: new Date().toISOString()
-			};
-			knownNames.add(name);
-			added.push({ file_id: id, file_name: name });
-			changed = true;
+		if (adopt) {
+			for (const name of diskNames) {
+				if (knownNames.has(name)) continue;
+				const id = newFileId();
+				manifest.files[id] = {
+					file_name: name,
+					classes: [],
+					missing: false,
+					created_at: new Date().toISOString()
+				};
+				knownNames.add(name);
+				added.push({ file_id: id, file_name: name });
+				changed = true;
+			}
 		}
 
 		const missing: { file_id: string; file_name: string }[] = [];

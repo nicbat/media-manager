@@ -54,9 +54,32 @@ export function getMediaDir(): string {
 	return path.join(getRootDir(), MEDIA_DIR_NAME);
 }
 
-/** Absolute path to the global blob directory (`<root>/media/files`). */
+/**
+ * Absolute path to the global blob directory.
+ *
+ * - **Classic mode (default):** `<root>/media/files` — blobs live inside the workspace.
+ * - **Static-assets mode (opt-in):** when `MEDIA_MANAGER_ASSETS_DIR` is set (from the config's
+ *   `assets.dir`, plumbed in by the CLI), blobs live in that host-served static folder instead — so
+ *   they're CDN-served and never bundled into a size-limited serverless function.
+ *
+ * This is the **single seam** that switches the two modes: every blob consumer (upload, blob serve,
+ * EXIF, rename/delete, manifest reconcile, missing-file scan) resolves through this one accessor, so
+ * only the location moves — the manifest, classes, and records stay in the workspace either way
+ * (they build off {@link getMediaDir} / {@link getRootDir}, not this).
+ */
 export function getGlobalFilesDir(): string {
+	const configured = process.env.MEDIA_MANAGER_ASSETS_DIR?.trim();
+	if (configured) return path.resolve(configured);
 	return path.join(getMediaDir(), GLOBAL_FILES_DIR_NAME);
+}
+
+/**
+ * True when blobs are stored in an external static dir (static-assets mode) rather than the in-workspace
+ * `<root>/media/files`. Used by the manifest reconcile to gate auto-adoption of hand-dropped files (a
+ * shared static folder may contain non-blob assets).
+ */
+export function isStaticAssetsMode(): boolean {
+	return Boolean(process.env.MEDIA_MANAGER_ASSETS_DIR?.trim());
 }
 
 /** Absolute path to the global blob manifest (`<root>/media/manifest.json`). */

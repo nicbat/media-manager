@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -275,5 +275,50 @@ describe('quiet heal — write only on real change (Item 32)', () => {
 		const after = freezeAndReadMtime();
 		await reconcile(['a.png']);
 		expect(fs.statSync(manifestPath).mtimeMs).toBe(after);
+	});
+});
+
+describe('reconcile in static-assets mode (adoption gated)', () => {
+	beforeEach(() => {
+		const root = path.join(
+			tmpdir(),
+			`mm-manifest-static-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
+		const assetsDir = path.join(root, 'static', 'media');
+		fs.mkdirSync(assetsDir, { recursive: true });
+		fs.mkdirSync(path.join(root, 'media'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+		// Point the blob subsystem at the host static dir — this is what flips the mode.
+		process.env.MEDIA_MANAGER_ASSETS_DIR = assetsDir;
+		process.env.MEDIA_MANAGER_ASSETS_BASE_URL = '/media';
+	});
+
+	afterEach(() => {
+		// Never leak the static-mode env into sibling test files/tests.
+		delete process.env.MEDIA_MANAGER_ASSETS_DIR;
+		delete process.env.MEDIA_MANAGER_ASSETS_BASE_URL;
+	});
+
+	it('does NOT adopt unknown on-disk files (a shared static folder holds non-blob assets)', async () => {
+		// e.g. the site's favicon.png sitting in static/media alongside real blobs.
+		const result = await reconcile(['favicon.png', 'og-image.jpg']);
+		expect(result.added).toHaveLength(0);
+		const manifest = await readManifest();
+		expect(Object.keys(manifest.files)).toHaveLength(0);
+	});
+
+	it('still registers blobs explicitly (upload path) and flags manifest entries gone from disk', async () => {
+		const id = await mintFileId('real-photo.jpeg'); // explicit registration still works
+		// real-photo is on disk; a stray favicon is too but must not be adopted; a known blob vanished.
+		await mintFileId('vanished.jpeg');
+		const result = await reconcile(['real-photo.jpeg', 'favicon.png']);
+		expect(result.added).toHaveLength(0); // favicon NOT adopted
+		expect(result.missing.map((m) => m.file_name)).toContain('vanished.jpeg');
+		expect(await getFilenameForFileId(id)).toBe('real-photo.jpeg'); // explicit blob intact
+	});
+
+	it('respects an explicit { adopt: true } override (used by export/import)', async () => {
+		const result = await reconcile(['brought-in.jpeg'], { adopt: true });
+		expect(result.added.map((a) => a.file_name)).toEqual(['brought-in.jpeg']);
 	});
 });

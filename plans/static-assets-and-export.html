@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — Static assets (separate blob store) · Auto-detect · Export</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2129;
+        --line: #2a323c;
+        --ink: #e7edf3;
+        --muted: #9aa7b4;
+        --accent: #ffd23f;
+        --accent-dim: #8a7416;
+        --green: #5fd08a;
+        --blue: #6ea8ff;
+        --pink: #ff8fb1;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 80% -10%, #1a1f27 0%, var(--bg) 55%);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 120px; }
+      header.hero { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 8px; }
+      .kicker { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); max-width: 74ch; }
+      .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+      .toc a {
+        font: 600 12px/1 var(--mono); text-decoration: none; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 7px 12px; transition: 0.15s;
+      }
+      .toc a:hover { border-color: var(--accent); color: var(--accent); }
+      section { margin-top: 44px; scroll-margin-top: 20px; }
+      h2 { font-size: 21px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+      h2 .n { font: 700 13px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 6px; padding: 5px 8px; }
+      h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+      p { margin: 8px 0; }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+      pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+      pre .c { color: var(--muted); }
+      pre .k { color: var(--pink); }
+      pre .s { color: var(--green); }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+      ul, ol { margin: 8px 0; padding-left: 22px; }
+      li { margin: 5px 0; }
+      .tag { font: 600 11px/1 var(--mono); border-radius: 999px; padding: 4px 9px; border: 1px solid var(--line); color: var(--muted); }
+      .tag.ok { color: var(--green); border-color: #2c4a37; }
+      .tag.warn { color: var(--accent); border-color: var(--accent-dim); }
+      .tag.info { color: var(--blue); border-color: #2c3c58; }
+      .phase { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
+      .phase .pn { font: 700 12px/1 var(--mono); color: var(--bg); background: var(--blue); border-radius: 6px; padding: 5px 8px; }
+      table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13.5px; }
+      th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+      th { background: var(--panel-2); color: var(--accent); font-weight: 600; }
+      .files { font-family: var(--mono); font-size: 12px; color: var(--blue); }
+      .callout { border-left: 3px solid var(--accent); background: rgba(255,210,63,0.06); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 14px 0; }
+      .callout.risk { border-left-color: var(--pink); background: rgba(255,143,177,0.06); }
+      .callout.good { border-left-color: var(--green); background: rgba(95,208,138,0.06); }
+      hr.soft { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
+      .lead { font-size: 16px; }
+      .decision { display: grid; grid-template-columns: 160px 1fr; gap: 10px 16px; margin: 6px 0; }
+      .decision dt { color: var(--accent); font-weight: 600; }
+      .decision dd { margin: 0; color: var(--ink); }
+      @media (max-width: 760px) { .decision { grid-template-columns: 1fr; gap: 2px; } .decision dd { margin-bottom: 8px; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="kicker">media-manager · plan</div>
+        <h1>Static assets: a separate blob store, with auto-detect &amp; export</h1>
+        <p class="sub lead">
+          Let a media-manager workspace keep its binary files <strong>outside</strong> the workspace —
+          in the host site's static folder — so they're served straight from a CDN and never bundled
+          into a size-limited serverless function. Configurable per project, auto-detected where
+          possible, and reversible via an <code>export</code> that reunites everything into one
+          self-contained folder.
+        </p>
+        <nav class="toc">
+          <a href="#why">Why</a>
+          <a href="#decisions">Decisions</a>
+          <a href="#model">Two modes</a>
+          <a href="#config">Config shape</a>
+          <a href="#phases">Build plan</a>
+          <a href="#reader">Reader mode</a>
+          <a href="#export">Export</a>
+          <a href="#risks">Risks</a>
+          <a href="#cutover">nicb.at cutover</a>
+          <a href="#housekeeping">Docs &amp; fixtures</a>
+        </nav>
+      </header>
+
+      <section>
+        <div class="callout good" style="margin-top:28px">
+          <strong>✅ Shipped 2026-08-07 (media-manager side).</strong> P1–P6 are implemented, verified,
+          and green — 275 unit tests, 0 type errors, lint-clean. Config parsing + precedence fix + the
+          <code>getGlobalFilesDir</code> seam (P1), reconcile adoption-gating (P2), auto-detect /
+          <code>doctor</code> validation (P3), reader <code>baseUrl</code> mode (P4), the
+          <code>export</code> verb (P5), and docs (P6) all landed; each phase's CLI behavior was
+          exercised end-to-end (auto-detect, doctor pass/fail, export-by-manifest). Recorded as
+          <strong>Item 45</strong> in <span class="files">FEATURES.md</span> /
+          <span class="files">FUTURE_CHANGES.md</span>. <strong>Remaining:</strong> §8 — the nicb.at
+          cutover (host repo, your call) — and the optional content-hash cache-busting follow-up.
+        </div>
+      </section>
+
+      <section id="why">
+        <h2><span class="n">0</span> The problem, in plain terms</h2>
+        <div class="card">
+          <p>
+            A media-manager workspace stores its photos inside itself, at
+            <code>&lt;root&gt;/media/files/</code>. A host site (nicb.at) bundles that workspace with
+            Vite so the reader can resolve photo URLs. The current reader recipe uses an
+            <em>eagerly-evaluated</em> <code>?url</code> glob over <code>media/files/*</code> — which
+            runs in server-reachable module scope, so Vite's SSR build emits <strong>every photo as a
+            bundled asset</strong> and <code>adapter-vercel</code> copies them into the serverless
+            function.
+          </p>
+          <p>
+            Result: <strong>236&nbsp;MB of photos land inside a 250&nbsp;MB-capped function</strong> and
+            the deploy fails — even though the very same bytes <em>also</em> sit in the CDN static
+            output (uncapped) where visitors actually read them. The bundled copy is pure dead weight.
+          </p>
+          <div class="callout good">
+            <strong>The core fix is settled &amp; verified:</strong> feed the reader plain URLs
+            (<code>/media/&lt;file&gt;</code>) and stop bundling the binaries. The reader only ever does a
+            case-insensitive <code>filename&nbsp;→&nbsp;string</code> lookup (<span class="files">media-manager.ts:210</span>),
+            and dimensions come off the manifest, not the bundler (<span class="files">manifest.ts:88</span>) —
+            so nothing about item shapes changes. This plan is the <em>configurable, reusable</em>
+            version of that fix, built into media-manager itself instead of hand-rolled per site.
+          </div>
+        </div>
+      </section>
+
+      <section id="decisions">
+        <h2><span class="n">1</span> Decisions locked with you</h2>
+        <div class="card">
+          <dl class="decision">
+            <dt>Blob location</dt>
+            <dd>Photos live <strong>on their own in the site's static folder</strong> (e.g.
+              <code>static/media/</code>) — the binaries' only home. No copy step; no duplicate tree.</dd>
+            <dt>Configurable</dt>
+            <dd>Where that folder is (and the web address it's served at) is <strong>configured per
+              project</strong> in <code>media-manager.config.json</code>, with a sensible default per
+              framework.</dd>
+            <dt>Auto-detect</dt>
+            <dd>media-manager <strong>tries to detect</strong> the static folder from the host repo
+              (SvelteKit <code>static/</code>, Next/Astro <code>public/</code>…) and proposes it for you
+              to confirm.</dd>
+            <dt>Reader</dt>
+            <dd>A <strong><code>baseUrl</code> option</strong> on the reader synthesizes URLs from the
+              manifest — no <code>?url</code> glob. (Already agreed.)</dd>
+            <dt>Fallback</dt>
+            <dd>The editor <strong>sometimes runs standalone</strong>. When no static folder is
+              configured, it falls back to the classic in-workspace <code>media/files/</code> store.
+              Static mode is strictly <strong>opt-in</strong>; existing workspaces are untouched.</dd>
+            <dt>Export</dt>
+            <dd><code>export</code> produces a <strong>re-openable, self-contained workspace</strong> —
+              binaries reunited with their info in one tidy tree. Doubles as backup / move-to-another-site.</dd>
+            <dt>Sequencing</dt>
+            <dd><strong>Build the whole feature first, then switch nicb.at over</strong> in one go. The
+              deploy stays as-is until the cutover (§9).</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section id="model">
+        <h2><span class="n">2</span> Two modes &amp; the one seam that switches them</h2>
+        <p class="muted">
+          Everything hangs off a single decision: <em>where is the blob directory?</em> Today that's
+          hardcoded to <code>&lt;root&gt;/media/files</code> via <code>getGlobalFilesDir()</code>
+          (<span class="files">src/lib/storage/paths.ts:58</span>). Make that function
+          <strong>config-aware</strong> and both modes fall out of it — because every consumer (upload,
+          blob serving, EXIF, rename, delete, manifest reconcile, missing-file scan) already routes
+          through it.
+        </p>
+        <div class="grid2">
+          <div class="card">
+            <p><span class="tag ok">DEFAULT</span> &nbsp;<strong>Classic / in-workspace</strong></p>
+            <p class="muted">No <code>assets</code> config resolved.</p>
+            <pre><span class="c"># binaries live inside the workspace</span>
+&lt;root&gt;/media/files/olympic_river.jpeg
+<span class="c"># reader still uses the ?url glob (bundled, hashed)</span></pre>
+            <p class="muted">Standalone edits, existing sites, the committed test-fixture — all keep
+              working with zero change.</p>
+          </div>
+          <div class="card">
+            <p><span class="tag info">OPT-IN</span> &nbsp;<strong>Static / separate blob store</strong></p>
+            <p class="muted"><code>assets.dir</code> points at a served folder.</p>
+            <pre><span class="c"># binaries live in the site's static dir</span>
+&lt;site&gt;/static/media/olympic_river.jpeg
+<span class="c"># workspace holds only JSON; reader uses baseUrl</span>
+&lt;root&gt;/media/  (manifest.json, classes/, no files/)</pre>
+            <p class="muted">Served from the CDN at <code>/media/…</code>; never bundled into the function.</p>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>How the mode is chosen (per invocation):</strong> if an <code>assets.dir</code> is
+          configured and exists on disk → static mode; otherwise → classic. The resolved absolute dir +
+          base URL are handed to the server via env (mirroring how the root already flows into
+          <code>paths.ts</code>).
+        </div>
+        <div class="callout risk">
+          <strong>Precedence gotcha (must fix in P1):</strong> <code>assets</code> lives only in
+          <code>media-manager.config.json</code>, but <code>resolveRoot()</code>
+          (<span class="files">bin/media-manager.js:151</span>) <em>short-circuits</em> and never reads
+          the config file when the root came from a CLI arg or <code>MEDIA_MANAGER_ROOT</code> env. So
+          the config-only <code>assets</code> block would be silently skipped in exactly those modes.
+          <strong>Fix:</strong> always locate + read the config file for the <code>assets</code> block
+          regardless of how <code>root</code> was resolved (the nicb.at cutover is config-driven, so it's
+          unaffected — but the plumbing must not depend on that).
+        </div>
+      </section>
+
+      <section id="config">
+        <h2><span class="n">3</span> The config shape</h2>
+        <p>One additive block in the existing <code>media-manager.config.json</code> (already discovered
+          by walking up from cwd — <span class="files">bin/media-manager.js:36,131</span>). Paths are
+          resolved <strong>relative to the config file</strong>, exactly like <code>root</code> is today.</p>
+        <pre>{
+  <span class="k">"root"</span>: <span class="s">"./src/assets/media_manager"</span>,
+  <span class="k">"assets"</span>: {
+    <span class="k">"dir"</span>:     <span class="s">"./static/media"</span>,   <span class="c">// where blobs live &amp; are served from</span>
+    <span class="k">"baseUrl"</span>: <span class="s">"/media"</span>            <span class="c">// web-address prefix the reader uses</span>
+  }
+}</pre>
+        <ul>
+          <li><strong>Both fields optional.</strong> Absent <code>assets</code> ⇒ classic mode. This is
+            the whole backward-compatibility story.</li>
+          <li><strong><code>dir</code></strong> is namespaced (a dedicated <code>media</code> subfolder,
+            not the bare <code>static/</code>) so the manifest's disk-reconcile never adopts unrelated
+            files the site keeps in <code>static/</code>.</li>
+          <li><strong><code>baseUrl</code></strong> is what the reader prefixes onto each filename.
+            (Stretch: let the reader read this from the workspace <code>settings.json</code> so the host
+            needn't pass it at all — noted in §6, not required for v1.)</li>
+        </ul>
+      </section>
+
+      <section id="phases">
+        <h2><span class="n">4</span> Build plan (feature-first, then cut over)</h2>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="phase"><span class="pn">P1</span><h3 style="margin:0">Config resolution &amp; the paths seam</h3></div>
+          <p class="muted">Foundation. No behavior change yet — just the plumbing that lets the blob dir move.</p>
+          <ul>
+            <li>Extend config load (<span class="files">bin/media-manager.js</span>) to parse the optional
+              <code>assets{ dir, baseUrl }</code>, resolve <code>dir</code> to an absolute path relative
+              to the config file, and export both to the server via
+              <code>MEDIA_MANAGER_ASSETS_DIR</code> / <code>MEDIA_MANAGER_ASSETS_BASE_URL</code> env.</li>
+            <li><strong>Fix the precedence short-circuit</strong> (<code>resolveRoot</code>,
+              <span class="files">bin/media-manager.js:151</span>): it returns before reading the config
+              file when root comes from arg/env, so the config-only <code>assets</code> block gets
+              skipped. Always locate the config for <code>assets</code>, independent of how root resolved.
+              Validate the dir is sane (don't silently point the blob subsystem at an arbitrary path).</li>
+            <li>Make <code>getGlobalFilesDir()</code> (<span class="files">src/lib/storage/paths.ts:58</span>)
+              return the configured assets dir when set, else <code>&lt;root&gt;/media/files</code>. Add
+              <code>getAssetsBaseUrl()</code>.</li>
+            <li><strong>Audit for hardcoded <code>media/files</code></strong> — everything must go through
+              the accessor. Known consumers: upload (<span class="files">/api/files/upload</span>), blob
+              serve (<span class="files">/api/files/[id]/blob</span>), EXIF
+              (<span class="files">server/fileMetadata.ts</span>), rename/delete
+              (<span class="files">classRepo.ts</span> · <code>renameBlobById</code>/<code>deleteFromDiskById</code>),
+              manifest reconcile (<span class="files">manifest.ts</span>), missing-refs
+              (<code>listMissingFileReferences</code>).</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="phase"><span class="pn">P2</span><h3 style="margin:0">Editor stores &amp; serves blobs from the static dir</h3></div>
+          <ul>
+            <li>With P1 in place this is mostly verification: uploads land in the static dir, thumbnails
+              serve from it, rename/delete/EXIF operate on it, and manifest reconcile scans it (adopting
+              new blobs, flagging vanished ones).</li>
+            <li><strong>Make reconcile safe for a shared/misconfigured dir (the sharpest risk).</strong>
+              <code>reconcile</code> (<span class="files">manifest.ts:283</span>) currently auto-adopts
+              <em>every</em> disk basename not already in the manifest, on every list call — its only
+              filter (<code>readGlobalBlobNames</code> / <code>NON_BLOB_NAMES</code>,
+              <span class="files">manifest.ts:11,316</span>) excludes dotfiles + a few known JSON names,
+              <em>not</em> arbitrary images. So pointing <code>dir</code> at a shared <code>static/</code>
+              would silently pull <code>favicon.png</code>, <code>og-image.jpg</code>, … into the manifest.
+              <strong>Enforce, don't just recommend, the dedicated subfolder</strong>: <code>init</code>/
+              <code>config</code>/<code>export</code> create and exclusively target a
+              <code>media</code> subdir, and gate manifest <em>adoption</em> in static mode so a stray
+              file can't enter the manifest on first serve.</li>
+            <li>Note the <code>mkdirSync(filesDir)</code> on the upload paths
+              (<span class="files">/api/files/upload/+server.ts:30</span> · google-photos import): in
+              static mode a mistyped <code>dir</code> silently materializes a stray directory. Prefer
+              <code>doctor</code>-validated existence over auto-creating outside <code>&lt;root&gt;</code>.</li>
+            <li>Unit tests over a temp root with an <code>assets.dir</code> pointed elsewhere; assert the
+              manifest + on-disk placement + blob serving all follow the seam, and that a non-blob file in
+              the dir is <em>not</em> adopted.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="phase"><span class="pn">P3</span><h3 style="margin:0">Auto-detect + <code>config</code> / <code>init</code> / <code>doctor</code> UX</h3></div>
+          <ul>
+            <li>Detector over the config-file directory (the host repo root): SvelteKit
+              (<code>svelte.config.*</code> + <code>static/</code>) → <code>./static/media</code> +
+              <code>/media</code>; Next/Astro (<code>next.config.*</code>/<code>astro.config.*</code> +
+              <code>public/</code>) → <code>./public/media</code> + <code>/media</code>; generic
+              <code>public/</code> fallback; else leave unset (classic).</li>
+            <li><strong>Propose-and-confirm</strong> in <code>init</code>/<code>config</code>: print the
+              guess, let the user accept or override, then write the <code>assets</code> block.</li>
+            <li><code>doctor</code> reports the resolved mode + assets dir/baseUrl and <strong>fails
+              loudly</strong> (not just warns) on: dir missing, dir not the dedicated subfolder, dir empty
+              while manifest lists blobs, filename present on disk but absent from manifest (and
+              vice-versa), and case-collisions (§8). This is the recovered build-time existence check.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="phase"><span class="pn">P4</span><h3 style="margin:0">Reader <code>baseUrl</code> mode</h3> <span class="tag info">pure lib</span></div>
+          <ul>
+            <li>See §6 for the full surface. Add <code>ReaderOptions.assets?: { baseUrl; encode? }</code>;
+              synthesize <code>assetIndex</code> from the manifest when set. Keep the <code>?url</code>
+              glob path working (both supported).</li>
+            <li>Rebuild the shipped subpath: <code>npm run build:reader</code> (regenerates
+              <code>dist/reader/</code>). Add reader unit tests
+              (<span class="files">src/lib/reader/media-manager.test.ts</span>).</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="phase"><span class="pn">P5</span><h3 style="margin:0"><code>export</code> command</h3></div>
+          <ul>
+            <li>New CLI verb (add to <code>VERBS</code>, <span class="files">bin/media-manager.js:37</span>).
+              See §7. Produces a canonical, re-openable workspace with binaries reunited into
+              <code>&lt;dest&gt;/media/files/</code>.</li>
+            <li>Verify-on-export: every <code>manifest.files[*].file_name</code> resolves in the assets
+              dir; report missing/collisions rather than silently dropping.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="phase"><span class="pn">P6</span><h3 style="margin:0">Docs, fixtures, backlog</h3></div>
+          <ul>
+            <li>Update the reader README + <span class="files">docs/reader-package-design.html</span> with
+              the <code>baseUrl</code> recipe; update <span class="files">docs/FEATURES.md</span> (new
+              assets/static-store semantics + <code>export</code> verb + reader mode) in the same change.</li>
+            <li>Add a <span class="files">docs/FUTURE_CHANGES.md</span> item (frontmatter shape) and mirror
+              it into <span class="files">docs/FUTURE_CHANGES_TRIAGE.html</span>; move to <em>Shipped
+              &amp; folded</em> when done.</li>
+            <li>Add a static-mode reader test; the committed <code>test-fixtures/</code> stays classic
+              (its purpose is the default path). Optionally a second tiny fixture exercising static mode.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="phase"><span class="pn">P7</span><h3 style="margin:0">Cut nicb.at over &amp; verify</h3></div>
+          <p class="muted">The payoff. Detailed checklist in §9.</p>
+        </div>
+      </section>
+
+      <section id="reader">
+        <h2><span class="n">5</span> Reader <code>baseUrl</code> mode — the surface</h2>
+        <p>Purely additive to the pure reader. The host stops passing a <code>files</code> glob and
+          passes a base URL instead:</p>
+        <pre><span class="k">const</span> mm = MediaManager.load(
+  {
+    data: import.meta.glob(<span class="s">'$assets/media_manager/**/*.json'</span>, { eager: <span class="k">true</span>, import: <span class="s">'default'</span> }),
+    <span class="c">// no files glob — binaries aren't bundled anymore</span>
+  },
+  { assets: { baseUrl: <span class="s">'/media'</span> } }
+);</pre>
+        <p>Inside the reader constructor (<span class="files">media-manager.ts:126</span>), after the
+          manifest is parsed: if the asset index is empty and <code>options.assets.baseUrl</code> is set,
+          fill it straight from the manifest —</p>
+        <pre><span class="k">for</span> (<span class="k">const</span> entry <span class="k">of</span> Object.values(this.manifest.files)) {
+  assetIndex.set(entry.file_name.toLowerCase(),
+                 joinUrl(baseUrl, encodeURIComponent(entry.file_name)));
+}</pre>
+        <table>
+          <tr><th>Concern</th><th>Handling</th></tr>
+          <tr><td>Both modes at once</td><td><code>baseUrl</code> only kicks in when no <code>?url</code> glob populated the index — so hosts under the size limit keep hashed, content-addressed assets unchanged.</td></tr>
+          <tr><td>URL encoding</td><td><code>encodeURIComponent</code> per filename (spaces / <code>#</code> / <code>?</code>). One implementation, in the library.</td></tr>
+          <tr><td><code>missing</code> semantics</td><td>Degrades from a build-time existence check to whatever the manifest claims; a truly absent binary becomes a runtime 404. <code>doctor</code> + export-time verify (§8) recover the build-time signal.</td></tr>
+          <tr><td>Case collisions</td><td>Index is keyed on lowercased basename. Assert no two <code>file_name</code>s collide when lowercased (the manifest is flat &amp; currently collision-free).</td></tr>
+          <tr><td>Cache-busting</td><td>Deferred. Names are camera-unique/immutable, so exposure is narrow. A later <code>?v=&lt;hash&gt;</code> needs a per-blob hash in the manifest — separable, reader needs no change (still a string).</td></tr>
+        </table>
+      </section>
+
+      <section id="export">
+        <h2><span class="n">6</span> The <code>export</code> command</h2>
+        <pre>npx media-manager export &lt;dest&gt;   <span class="c"># reunite into a self-contained workspace</span></pre>
+        <p>Writes a <strong>canonical, classic-layout</strong> workspace to <code>&lt;dest&gt;</code>:</p>
+        <ol>
+          <li>Copy the JSON tree verbatim — <code>settings.json</code>, <code>media/manifest.json</code>,
+            <code>media/classes/</code>, <code>records/</code>, <code>globals/</code>.</li>
+          <li>Copy every blob from the configured assets dir into
+            <code>&lt;dest&gt;/media/files/</code> (reuniting bytes with their info).</li>
+          <li>Verify each <code>manifest.file_name</code> resolved; report any missing / colliding.</li>
+        </ol>
+        <div class="callout good">
+          The result opens with <code>npx media-manager &lt;dest&gt;</code> in classic mode and needs no
+          static folder around it — so it's a proper <strong>backup</strong>, a <strong>hand-off</strong>,
+          and the <strong>portability answer</strong> for moving a static-mode workspace to a new machine
+          or site.
+        </div>
+      </section>
+
+      <section id="risks">
+        <h2><span class="n">7</span> Risks &amp; known limitations</h2>
+        <table>
+          <tr><th>Item</th><th>Note / mitigation</th></tr>
+          <tr>
+            <td><span class="tag warn">commit</span> Blobs must be committed</td>
+            <td>In this model the static dir is the blobs' <em>only</em> home — so <code>static/media/</code>
+              is <strong>committed to git</strong> (unlike a copy/sync approach, which would gitignore it).
+              No duplication in the working tree; the workspace's <code>media/files/</code> simply doesn't
+              exist in static mode.</td>
+          </tr>
+          <tr>
+            <td><span class="tag warn">standalone</span> Editing without the static folder</td>
+            <td>Opening a static-mode workspace <em>without</em> its static dir (e.g. you copied only the
+              JSON) shows blobs as missing — they live in the site repo you didn't bring. This is inherent
+              to splitting. <strong><code>export</code> is the fix</strong>: run it first to get a
+              self-contained tree. The chosen fallback only governs <em>new</em> standalone workspaces
+              (no config ⇒ classic <code>media/files</code>).</td>
+          </tr>
+          <tr>
+            <td><span class="tag warn">shared dir</span> Static folder holds other files</td>
+            <td><strong>Sharpest risk.</strong> Reconcile auto-adopts every unknown basename in the blob
+              dir (<span class="files">manifest.ts:283</span>), so a shared <code>static/</code> would pull
+              the site's <code>favicon</code>/OG images into the manifest on first serve. Mitigation must be
+              <em>enforced</em>, not advisory: <code>init</code>/<code>config</code> create &amp; exclusively
+              target a dedicated <code>media</code> subfolder, and adoption is gated in static mode (see P2).
+              <code>doctor</code> fails on a non-dedicated dir.</td>
+          </tr>
+          <tr>
+            <td><span class="tag warn">missing</span> Build-time existence check lost</td>
+            <td>Covered above (§5). Restore the signal via <code>doctor</code> + export-time verification.</td>
+          </tr>
+          <tr>
+            <td><span class="tag info">env-only</span> Single-node assumption unchanged</td>
+            <td>The assets dir flows via env like the root does; the coarse <code>.lock</code> mutex still
+              assumes single-node. No change to that contract.</td>
+          </tr>
+        </table>
+      </section>
+
+      <section id="cutover">
+        <h2><span class="n">8</span> nicb.at cutover (§P7, after the feature lands)</h2>
+        <ol>
+          <li>Add the <code>assets</code> block to nicb.at's <code>media-manager.config.json</code>
+            (auto-detected: <code>./static/media</code> + <code>/media</code>).</li>
+          <li>Move existing binaries <code>src/assets/media_manager/media/files/</code> →
+            <code>static/media/</code> (a one-time <code>git mv</code>; they stay committed).</li>
+          <li>In the reader call, <strong>remove the <code>files</code> <code>?url</code> glob</strong> and
+            add <code>{ assets: { baseUrl: '/media' } }</code>.</li>
+          <li><strong>Run <code>npx media-manager doctor</code> first</strong> — the intended pre-cutover
+            gate. It hard-fails on a manifest blob absent from the static dir (a runtime 404) or a
+            case-insensitive filename collision (which would throw the whole reader build in
+            <code>baseUrl</code> mode), and warns on stray non-blob files.</li>
+          <li><strong>Keep the OAuth secret out of the bundle:</strong> if
+            <code>src/assets/media_manager/media/google.json</code> exists, exclude it from the data glob
+            (<code>import.meta.glob(['…/**/*.json', '!**/google.json'])</code>) or don't commit it — the
+            <code>**/*.json</code> glob would otherwise bundle it into the build.</li>
+          <li>Verify:
+            <pre>npm run build
+du -sh <span class="s">'.vercel/output/functions/…/catchall.func'</span>   <span class="c"># ~5M, was 241M</span>
+du -sh <span class="s">'.vercel/output/static/media'</span>                <span class="c"># the bytes, CDN-served</span>
+grep -rn <span class="s">"query: *'?url'"</span> src/                       <span class="c"># no hits under media/files</span>
+npm run check &amp;&amp; npm run test:e2e                       <span class="c"># /photos still renders</span></pre>
+          </li>
+        </ol>
+        <div class="callout">
+          The e2e run matters most: a broken asset map degrades to a silently empty gallery
+          (<code>fetchImageList</code> filters on truthy <code>src</code>), so it would render blank
+          rather than fail loudly. Keep that test in the gate.
+        </div>
+        <p class="muted">Scope note (unchanged from the source spec): this removes the 250&nbsp;MB
+          constraint permanently but does <em>not</em> make the site fast — originals are full-res camera
+          files (~3.8&nbsp;MB avg). Resizing/re-encoding is a separate, still-worthwhile pass that could
+          also live in a media-manager export step later.</p>
+      </section>
+
+      <section id="housekeeping">
+        <h2><span class="n">9</span> Docs &amp; fixtures checklist</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3 style="margin-top:0">Update in the same change</h3>
+            <ul>
+              <li><span class="files">docs/FEATURES.md</span> — assets/static-store semantics, <code>export</code> verb, reader <code>baseUrl</code>.</li>
+              <li>Reader <span class="files">README.md</span> + <span class="files">docs/reader-package-design.html</span> — the <code>baseUrl</code> recipe.</li>
+              <li><span class="files">bin/media-manager.js</span> usage/help text — new verb + config keys.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0">Backlog hygiene</h3>
+            <ul>
+              <li>New <span class="files">docs/FUTURE_CHANGES.md</span> item (frontmatter: status/size/usefulness/priority/files/acceptance).</li>
+              <li>Mirror into <span class="files">docs/FUTURE_CHANGES_TRIAGE.html</span>; bump the count.</li>
+              <li>Cross-links: relates to reader Item&nbsp;33/44 (standalone reader package) and the npx vision.</li>
+            </ul>
+          </div>
+        </div>
+        <hr class="soft" />
+        <p class="muted">Rough size: P1–P2 are the substance (the paths seam + audit); P3–P5 are additive
+          surface; P6–P7 are wiring &amp; docs. No on-disk format version bump — the manifest is unchanged;
+          only the blob dir's <em>location</em> becomes configurable.</p>
+      </section>
+    </div>
+  </body>
+</html>

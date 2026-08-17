@@ -110,6 +110,62 @@ string literals, so they live in your code; the reader figures out what each ent
 class / record type / globals / asset) **from its path**, so this snippet is the same for every host
 — only the `$assets/media_manager` prefix changes.
 
+## Static assets — serve blobs from a CDN instead of bundling them
+
+The `files` `?url` glob above makes Vite **bundle every blob** into your build — ideal for a small
+workspace (content-hashed, immutable URLs), but on a size-capped host (e.g. a Vercel serverless
+function, 250 MB) a large photo library blows the limit: the bundler copies the binaries into the
+function even though nothing on the server reads their bytes.
+
+**Static-assets mode** fixes this. Drop the `files` glob and pass a `baseUrl` instead; the reader
+synthesizes each blob's URL from the manifest (`` `${baseUrl}/${encodeURIComponent(file_name)}` ``),
+so you serve the binaries from a static folder / CDN and never bundle them:
+
+```svelte
+<script>
+	import { MediaManager } from 'media-manager/reader/vite';
+
+	const mm = MediaManager.load(
+		{
+			data: import.meta.glob('$assets/media_manager/**/*.json', { eager: true, import: 'default' })
+		},
+		{ assets: { baseUrl: '/media' } } // ← no `files` glob; blobs served from /media/<file>
+	);
+</script>
+```
+
+Put the binaries where your framework serves static files at that base URL — SvelteKit `static/media/`,
+Next.js / Astro `public/media/` (both served at `/media`). The **editor can store them there directly**:
+add an `assets` block to `media-manager.config.json` and it writes blobs to that folder instead of
+inside the workspace (`npx media-manager config` auto-detects it; `media-manager export <dir>` reunites
+everything back into one self-contained tree when you need it):
+
+```json
+{ "root": "./src/assets/media_manager", "assets": { "dir": "./static/media", "baseUrl": "/media" } }
+```
+
+- **A `files` glob always wins.** `baseUrl` only fills the asset map when no glob populated it, so the
+  two modes never fight — keep the glob for small workspaces, switch to `baseUrl` when size bites.
+- **Dimensions are unaffected** — they come off the manifest, not the bundler.
+- **Cache-busting is on you.** Static URLs aren't content-addressed; if you _replace_ a file under the
+  same name, set cache headers yourself. Camera-unique names rarely hit this.
+- **Missing blobs become runtime 404s** instead of a build-time signal — run `media-manager doctor`
+  (it cross-checks the static folder against the manifest) to recover that check.
+- **Keep secrets out of the bundle.** If you used the editor's Google Photos import, it writes an OAuth
+  secret to `media/google.json` — and your `**/*.json` data glob will bundle it. Exclude it from the
+  glob (`import.meta.glob(['$assets/media_manager/**/*.json', '!**/google.json'])`) or don't commit it.
+  (`media-manager export` already omits it; the reader itself ignores it.)
+
+**Migrating an existing bundled workspace to static (classic → static):** the manifest travels with the
+workspace, so the blobs just need to move. The easiest way is **in the editor** — open Settings →
+**Storage** → _Change location_, set the served folder (e.g. `./static/media` + `/media`), strategy
+**Move**, and it relocates every blob and writes the `assets` block to `media-manager.config.json` in one
+click (creating the config if there wasn't one). Or do it by hand: add the `assets` block (or `npx
+media-manager config`) and move the bytes yourself (`git mv src/assets/media_manager/media/files/*
+static/media/`). Either way, **`git add` + commit the moved blobs — that's their only home now**, then on
+the reader side drop the `files` glob and pass `{ assets: { baseUrl: '/media' } }`. Run `media-manager
+doctor` to confirm the folder matches the manifest before you deploy.
+
 ## The object
 
 ```js
