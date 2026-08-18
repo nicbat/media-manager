@@ -236,21 +236,88 @@ export interface PickedItem {
 	mediaFile?: { baseUrl?: string; mimeType?: string; filename?: string };
 }
 
-/** Authenticated JSON call against the Picker API. */
+/**
+ * Flatten a thrown `fetch` error into a message that names the actual failure.
+ *
+ * Node's `fetch` (undici) reports every transport-level problem as the useless `TypeError: fetch
+ * failed` and hides the real reason — DNS failure, TLS error, `ECONNRESET`, a socket the peer closed
+ * — one or more levels down the `cause` chain. Surfacing that chain is the difference between a
+ * bug report that says "fetch failed" and one that says `ECONNRESET`.
+ *
+ * @param err The value thrown by `fetch`.
+ * @returns A single-line description including every nested cause.
+ */
+function describeFetchError(err: unknown): string {
+	const parts: string[] = [];
+	let cur: unknown = err;
+	for (let depth = 0; cur instanceof Error && depth < 5; depth++) {
+		const code = (cur as NodeJS.ErrnoException).code;
+		parts.push(`${cur.message}${code ? ` (${code})` : ''}`);
+		cur = (cur as Error).cause;
+	}
+	return parts.length ? parts.join(' ← ') : String(err);
+}
+
+/** Per-attempt ceiling for a Picker call, so a hung socket can't stall a poll forever. */
+const PICKER_TIMEOUT_MS = 20_000;
+
+/**
+ * Authenticated JSON call against the Picker API, with bounded retries on transient faults.
+ *
+ * Retries only when it is safe to do so: a transport-level failure (nothing reached Google, so
+ * nothing was applied) or a 5xx **on an idempotent method**. A `POST /sessions` is never retried
+ * after a response, since a duplicate would leak a second picking session.
+ *
+ * @param accessToken A fresh OAuth access token.
+ * @param pathAndQuery Path appended to {@link PICKER_API}, e.g. `/sessions/abc`.
+ * @param init Standard `fetch` init; `Authorization` is merged in.
+ * @returns The successful `Response`.
+ * @throws When every attempt fails — the message names the real transport error or the HTTP body.
+ *
+ * Concerns / future improvements:
+ * - Backoff is a fixed short ramp, not jittered exponential; polling cadence already paces us.
+ * - A 401 is not special-cased into a token refresh; {@link getAccessToken} mints per call.
+ */
 async function pickerFetch(
 	accessToken: string,
 	pathAndQuery: string,
 	init?: RequestInit
 ): Promise<Response> {
-	const res = await fetch(`${PICKER_API}${pathAndQuery}`, {
-		...init,
-		headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers ?? {}) }
-	});
-	if (!res.ok) {
+	const method = (init?.method ?? 'GET').toUpperCase();
+	const idempotent = method === 'GET' || method === 'DELETE';
+	const attempts = 3;
+	let lastError = '';
+
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		let res: Response;
+		try {
+			res = await fetch(`${PICKER_API}${pathAndQuery}`, {
+				...init,
+				headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers ?? {}) },
+				signal: AbortSignal.timeout(PICKER_TIMEOUT_MS)
+			});
+		} catch (err) {
+			// Transport-level: the request never got a response, so retrying is always safe.
+			lastError = `network error on ${pathAndQuery}: ${describeFetchError(err)}`;
+			if (attempt < attempts) {
+				await new Promise((r) => setTimeout(r, 300 * attempt));
+				continue;
+			}
+			throw new Error(`Picker API ${lastError}`);
+		}
+
+		if (res.ok) return res;
+
 		const body = await res.text().catch(() => '');
-		throw new Error(`Picker API ${res.status} on ${pathAndQuery}${body ? `: ${body}` : ''}`);
+		lastError = `Picker API ${res.status} on ${pathAndQuery}${body ? `: ${body}` : ''}`;
+		if (res.status >= 500 && idempotent && attempt < attempts) {
+			await new Promise((r) => setTimeout(r, 300 * attempt));
+			continue;
+		}
+		throw new Error(lastError);
 	}
-	return res;
+
+	throw new Error(lastError || `Picker API request to ${pathAndQuery} failed`);
 }
 
 /** Create a picking session; the user opens `pickerUri` to select photos. */

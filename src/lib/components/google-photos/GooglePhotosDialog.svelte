@@ -155,12 +155,27 @@
 			window.open(session.pickerUri, '_blank', 'noopener');
 			view = 'picking';
 			// Poll the session until the user finishes selecting (~10 min budget).
+			// A poll runs while the user is away in Google's picker tab, so a single blip (dropped
+			// socket, laptop sleeping/resuming, wifi hop) must NOT kill the flow — tolerate a few
+			// consecutive failures and only surface the error once it looks persistent.
 			const deadline = Date.now() + 10 * 60_000;
+			const maxConsecutiveFailures = 4;
+			let consecutiveFailures = 0;
 			let ready = false;
 			while (Date.now() < deadline && token === runToken) {
 				await sleep(session.pollIntervalMs);
 				if (token !== runToken) return;
-				ready = await apiPollGooglePhotosSession(session.sessionId);
+				try {
+					ready = await apiPollGooglePhotosSession(session.sessionId);
+					consecutiveFailures = 0;
+				} catch (e) {
+					if (++consecutiveFailures >= maxConsecutiveFailures) throw e;
+					console.warn(
+						`[google-photos] poll failed (${consecutiveFailures}/${maxConsecutiveFailures}), retrying`,
+						e
+					);
+					continue;
+				}
 				if (ready) break;
 			}
 			if (token !== runToken) return;

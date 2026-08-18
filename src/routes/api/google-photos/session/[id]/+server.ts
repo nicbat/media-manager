@@ -9,6 +9,8 @@ export const GET: RequestHandler = async ({ params }) => {
 		const session = await getSession(accessToken, params.id);
 		return json({ ready: session.mediaItemsSet === true });
 	} catch (err) {
+		// Log the whole error (incl. undici's nested `cause`) — the HTTP body only carries `.message`.
+		console.error('[google-photos] poll failed for session', params.id, err);
 		throw error(400, (err as Error).message);
 	}
 };
