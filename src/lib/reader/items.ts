@@ -27,6 +27,32 @@ function refIds(value: unknown): string[] {
 	return [];
 }
 
+/**
+ * A resolved compressed **variant** of a blob (Item 15): one preset's derivative, already joined to a
+ * usable URL. Handed back by {@link MediaItem.variantInfo}.
+ *
+ * `src` is non-nullable **by construction** — `variantInfo` returns `null` rather than a record with a
+ * dead URL, so a component that got a `VariantInfo` can render it unguarded.
+ *
+ * Concerns / future improvements: `width`/`height` describe the **derivative** (a 400px-wide thumb
+ * reports `width: 400`), so pairing `variantInfo('thumb').src` with the item's own `width`/`height` is
+ * a layout bug — take both from the same object.
+ */
+export interface VariantInfo {
+	/** The preset id this variant was generated for (`web`, `thumb`, …). */
+	preset: string;
+	/** Resolved URL of the derivative file. Never `null` (see above). */
+	src: string;
+	/** The derivative's pixel width, or `0` when unknown. */
+	width: number;
+	/** The derivative's pixel height, or `0` when unknown. */
+	height: number;
+	/** Byte size of the derivative, or `0` when unknown. */
+	size: number;
+	/** Structural-similarity score (0–1) against the original, or `null` when unscored. */
+	ssim: number | null;
+}
+
 /** Intrinsic keys a {@link MediaItem} resolves from blob metadata (not class fields). */
 const MEDIA_INTRINSICS = new Set([
 	'id',
@@ -62,6 +88,13 @@ export class MediaItem implements FieldAccessible {
 	readonly missing: boolean;
 	/** Class-scoped per-blob metadata (empty at the blob level). */
 	readonly fields: Record<string, unknown>;
+	/**
+	 * Resolved compressed variants by preset id (Item 15) — only presets that actually produced a file
+	 * **and** resolved to a URL appear. Empty when the workspace has no derivatives, or when the host
+	 * wired neither a `derived` glob nor a static-assets `baseUrl`. Prefer the {@link variant} /
+	 * {@link variantInfo} accessors; read the map directly only to enumerate available presets.
+	 */
+	readonly variants: ReadonlyMap<string, VariantInfo>;
 
 	private readonly ctx: ReaderContext;
 
@@ -74,6 +107,7 @@ export class MediaItem implements FieldAccessible {
 		classes?: string[];
 		missing?: boolean;
 		fields?: Record<string, unknown>;
+		variants?: ReadonlyMap<string, VariantInfo>;
 		ctx: ReaderContext;
 	}) {
 		this.id = init.id;
@@ -84,6 +118,7 @@ export class MediaItem implements FieldAccessible {
 		this.classes = init.classes ?? [];
 		this.missing = init.missing ?? false;
 		this.fields = init.fields ?? {};
+		this.variants = init.variants ?? new Map();
 		this.ctx = init.ctx;
 	}
 
@@ -112,6 +147,54 @@ export class MediaItem implements FieldAccessible {
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * The full record for one compressed **variant** of this blob (Item 15) — its URL plus the
+	 * derivative's own dimensions, byte size, and similarity score.
+	 *
+	 * Use case: rendering a gallery from small `thumb` derivatives while linking the full-size original,
+	 * or reporting how much a preset saved. Because a `VariantInfo`'s `src` is non-nullable, a returned
+	 * record is always safe to render.
+	 *
+	 * Returns `null` when this blob has **no usable derivative** for `preset` — the preset was never
+	 * generated, the editor skipped it (unsupported / larger-than-original / error, all of which leave a
+	 * `file_name`-less manifest entry), or the derivative's URL did not resolve in the host's build. A
+	 * component must never be handed a broken URL, so an unresolved variant is reported as absent.
+	 *
+	 * **There is deliberately no "nearest preset" fallback.** An absent preset returns `null` and the
+	 * caller falls through to the original — `item.variantInfo('thumb')?.src ?? item.src`. Silently
+	 * substituting a *different* preset would be worse than either outcome: the caller asked for a size
+	 * budget, and quietly serving a 4000px `web` derivative where a 400px `thumb` was requested would
+	 * blow that budget invisibly, with dimensions that no longer match what the caller laid out. Falling
+	 * back to the original is at least a choice the caller can see and reason about in their own code.
+	 *
+	 * @param preset - The preset id to look up (`web`, `thumb`, … — whatever the editor was configured
+	 *   with). Unknown ids are not an error; they simply yield `null`.
+	 * @returns The resolved variant, or `null` when this blob has none for that preset.
+	 *
+	 * Concerns / future improvements: take `width`/`height` from the returned record, **not** from the
+	 * item — they describe the derivative, and using `item.width` on a thumbnail is wrong by
+	 * construction.
+	 */
+	variantInfo(preset: string): VariantInfo | null {
+		return this.variants.get(preset) ?? null;
+	}
+
+	/**
+	 * The URL of one compressed variant of this blob, or `null` when there is none — the one-liner form
+	 * of {@link variantInfo} for the common `<img src={item.variant('web') ?? item.src}>` case.
+	 *
+	 * @param preset - The preset id to look up.
+	 * @returns The derivative's URL, or `null` (see {@link variantInfo} for exactly when).
+	 *
+	 * Concerns / future improvements: this drops the variant's dimensions, so only reach for it when the
+	 * derivative has the **same** aspect and you're laying out from the original's `width`/`height`
+	 * (e.g. a same-size re-encode like `webp:q80`). For a resized preset use {@link variantInfo} and
+	 * take the dimensions from there.
+	 */
+	variant(preset: string): string | null {
+		return this.variants.get(preset)?.src ?? null;
 	}
 
 	/**

@@ -411,7 +411,7 @@
 		<header class="top">
 			<h1><span class="pink">Future Changes</span> — Triage Board</h1>
 			<p class="sub">
-				Live read of <code>docs/FUTURE_CHANGES.md</code> · 47 items classified by status, size,
+				Live read of <code>docs/FUTURE_CHANGES.md</code> · 48 items classified by status, size,
 				cluster, and open-question load · generated 2026-06-29
 			</p>
 			<div class="stats" id="stats"></div>
@@ -688,12 +688,23 @@
 				{
 					n: 15,
 					name: 'Image Compression Management',
-					status: 'active',
-					size: 'M',
+					status: 'done',
+					size: 'L',
 					prio: 'low',
 					use: 2,
 					group: 'assets',
-					note: 'De-scoped from 1.0 (2026-06-28). Compressed variants via sharp. Non-urgent. Strong overlap with Item 7 (thumbnails) — design the resize pipeline once.'
+					note: 'Phase 1 shipped 2026-08-18 — compressed twins alongside the originals, measured (SSIM) and reported at /compression. Presets are the unit and things subscribe to them, so a multi-class blob has no conflict to resolve. Manifest `derived` block, background worker w/ batched writes, backfill + sweep, reader item.variant(). Resolved its open question and settled Item 35; Item 23 now depends on it. Phase 2 (widths, per-class subscription, srcset) + Item 47 (versioned URLs) carved out.'
+				},
+				{
+					n: 47,
+					name: 'Versioned derivative URLs (cache-busting)',
+					status: 'discussion',
+					size: 'S',
+					prio: 'low',
+					use: 2,
+					group: 'assets',
+					oq: 1,
+					note: 'Carved out of Item 15 as a deferred decision with a recorded trigger: revisit if image links get shared, or the site feels slow. Ships today as clean filenames + a 1-hour cache lifetime. Preferred shape = version the directory (/derived/web.a1b2c3/), not the filename; ?v= rejected (some CDNs drop query strings from the cache key). Cheap to defer because derivative names are always read from the manifest, never reconstructed.'
 				},
 				{
 					n: 17,
@@ -908,12 +919,12 @@
 				{
 					n: 35,
 					name: 'Remove (or use) the `sharp` dependency',
-					status: 'active',
+					status: 'done',
 					size: 'S',
 					prio: 'low',
 					use: 2,
 					group: 'assets',
-					note: 'Hygiene — low direct user value but cuts install/native-build cost. Either drop it, or adopt for thumbnails (pairs with 15/34).'
+					note: 'Resolved 2026-08-18 by Item 15 — the "actually use it" branch won: sharp is the encoder behind the compression pipeline (server/compression/generate.ts + ssim.ts). No longer a dangling dependency.'
 				},
 
 				{

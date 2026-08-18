@@ -13,13 +13,19 @@ code paths can be exercised:
 | `records/albums/`              | `json` type with a `photos` **file** field scoped to the `images` class and two-way **linked** to `images.album`; one record "Vacation 2026" whose `photos` = sunset + ocean (mirrors the `album` values on those two image records) |
 | `media/classes/documents.json` | Class with the `.txt` as a member (any file type); `config.icon: file-text`                                                                                                                                                          |
 | `settings.json`                | App-wide UI prefs (grid size, navigation) — hoisted out of `media/settings.json` (Item 18)                                                                                                                                           |
-| `media/settings.json`          | Media-scoped prefs: `classOrder` only (Item 18)                                                                                                                                                                                      |
+| `media/settings.json`          | Media-scoped prefs: `classOrder` (Item 18) + the `compression` preset registry (Item 15) — one `web` preset, WebP q80, applied to every image                                                                                        |
 | `records/settings.json`        | Records-scoped prefs — empty `{}` (the dormant `typeOrder` home; Item 18 / Item 41)                                                                                                                                                  |
 | `records/notes/`               | `json` record type; two records; `attachment` **file** field + `related` **record** field (each: one valid, one broken); `settings.json` `icon: newspaper`                                                                           |
 | `globals/`                     | The reserved `json` singleton — stays **top-level** (not under `records/`)                                                                                                                                                           |
 | `posts/settings.json`          | Posts collection registry (Item 14): `words` (typed frontmatter hints incl. `cover`→file, `date`) + `now`                                                                                                                            |
 | `posts/words/tidepooling.md`   | Golden sample post — frontmatter `cover` = sunset blob (`mm://`), prose with marks, an inline `mm://` image, one `mm-beside` island (forest blob), and a fenced `bash` block                                                         |
 | `posts/now/reading.md`         | A short code-block post (a `ts` fence) in the `now` collection                                                                                                                                                                       |
+
+**No `media/derived/` is committed, on purpose.** Compressed derivatives (Item 15) are _generated_,
+not authored — the seed carries the preset registry that describes them, and the first serve generates
+the tree. That is deliberate: it means `npm run test:serve` exercises the real ingest/backfill path
+from an empty state every time, rather than testing against binaries that would silently rot whenever
+a fixture image changed. Delete `test-data/media/derived/` at any point and a backfill rebuilds it.
 
 Every blob lives in `media/files/` (`getGlobalFilesDir()`) and is registered in
 `media/manifest.json` with a stable id; a class is a member-keyed metadata table

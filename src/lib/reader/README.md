@@ -52,7 +52,8 @@ src/assets/media_manager/
 ├─ media/
 │  ├─ manifest.json
 │  ├─ classes/<id>.json
-│  └─ files/<blobs>          ← the ?url glob targets this dir
+│  ├─ files/<blobs>          ← the ?url glob targets this dir
+│  └─ derived/<preset>/<blobs>   ← compressed variants (optional; its own ?url glob)
 ├─ records/<typeId>/{settings.json, data.json}
 └─ globals/{settings.json, data.json}
 ```
@@ -147,8 +148,34 @@ everything back into one self-contained tree when you need it):
 - **A `files` glob always wins.** `baseUrl` only fills the asset map when no glob populated it, so the
   two modes never fight — keep the glob for small workspaces, switch to `baseUrl` when size bites.
 - **Dimensions are unaffected** — they come off the manifest, not the bundler.
-- **Cache-busting is on you.** Static URLs aren't content-addressed; if you _replace_ a file under the
-  same name, set cache headers yourself. Camera-unique names rarely hit this.
+- **Compressed variants come along** — derivatives are synthesized one directory deeper,
+  `` `${baseUrl}/derived/<preset>/<file>` ``, so `item.variant('web')` works in static mode with no extra
+  wiring (see [Compressed variants](#compressed-variants--serve-a-smaller-image)). That's gated
+  separately from the originals, so a `derived` glob and a `baseUrl` can coexist in either direction.
+- **Cache-busting is on you — and it actually matters for derivatives.** Static URLs aren't
+  content-addressed. Originals rarely hit this (camera-unique names, never replaced), but **compressed
+  derivatives are regenerated in place under the same filename** whenever you change a preset's quality,
+  so their bytes change at an address a browser or CDN already believes it knows. The editor serves them
+  with `Cache-Control: public, max-age=3600`; in static mode nothing does that for you, so **set an
+  explicit, bounded lifetime on `<baseUrl>/derived/` yourself** — an hour is plenty, and it means a
+  preset change reaches every visitor within the hour. On Vercel that's a few lines:
+
+  ```json
+  {
+  	"headers": [
+  		{
+  			"source": "/media/derived/(.*)",
+  			"headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }]
+  		}
+  	]
+  }
+  ```
+
+  Clean filenames with an _uncontrolled_ lifetime is the one genuinely broken combination — a changed
+  image that never reaches anyone. Versioned URLs (`/derived/web.a1b2c3/…`, cacheable forever) are a
+  deliberate deferral, not an oversight: see `docs/FUTURE_CHANGES.md` Item 47 for the reasoning and the
+  trigger to revisit.
+
 - **Missing blobs become runtime 404s** instead of a build-time signal — run `media-manager doctor`
   (it cross-checks the static folder against the manifest) to recover that check.
 - **Keep secrets out of the bundle.** If you used the editor's Google Photos import, it writes an OAuth
@@ -195,7 +222,10 @@ MediaItem {
   classes: string[];             // membership
   missing: boolean;
   fields: Record<string, unknown>;     // class metadata (populated only in a class view)
+  variants: ReadonlyMap<string, VariantInfo>;  // resolved compressed derivatives, by preset id
   field(key): unknown;                 // value by key (fields first, else intrinsics)
+  variant(preset): string | null;      // a compressed variant's URL
+  variantInfo(preset): VariantInfo | null;  // …plus its own width/height/size/ssim
   file(key): MediaItem | null;         // follow a file-type field
   files(key): Collection<MediaItem>;   // follow a list-of-files field
   record(key): MMRecord | null;        // follow a record-type field
@@ -264,6 +294,65 @@ p.records('contributors'); // → Collection<MMRecord>  (dangling ids dropped)
 
 A dangling reference yields `null` (or is dropped from `files()` / `records()`), never a throw or a
 broken render. Because identity is shared, you can chain hops: `p.record('lead').file('avatar')?.src`.
+
+## Compressed variants — serve a smaller image
+
+The editor can generate compressed **derivatives** of each blob under named **presets** (`web`, `thumb`,
+…), stored at `media/derived/<preset>/<file>`. The reader joins them onto the item, so you pick a
+preset at the render site and fall back to the original when it isn't there.
+
+Pass a **fourth** glob (`?url`, pointed at the preset directories):
+
+```js
+const mm = MediaManager.load({
+	data: import.meta.glob('$assets/media_manager/**/*.json', { eager: true, import: 'default' }),
+	files: import.meta.glob('$assets/media_manager/media/files/*', {
+		eager: true,
+		query: '?url',
+		import: 'default'
+	}),
+	derived: import.meta.glob('$assets/media_manager/media/derived/*/*', {
+		eager: true,
+		query: '?url',
+		import: 'default'
+	})
+});
+```
+
+Then read a variant off any `MediaItem`:
+
+```js
+photo.variant('web'); // → "/assets/sunset.web.hash.webp"  (just the URL, or null)
+photo.variantInfo('thumb'); // → { preset, src, width, height, size, ssim } | null
+photo.variants; // ReadonlyMap<preset, VariantInfo> — enumerate what exists
+```
+
+**Take the dimensions from the variant, not from the item.** A derivative is often _resized_, so its
+`width`/`height` are its own — pairing a 400px `thumb` URL with the original's `width` is a layout bug
+by construction. The canonical pattern, with the fallback baked in:
+
+```svelte
+{@const t = item.variantInfo('thumb')}
+<img
+	src={t?.src ?? item.src}
+	width={t?.width ?? item.width}
+	height={t?.height ?? item.height}
+	alt=""
+/>
+```
+
+- **`null` means "not there" — you fall back.** There is deliberately **no nearest-preset fallback**:
+  asking for `thumb` never silently hands you the 4000px `web` file. A preset is absent when it was
+  never generated, when the editor _skipped_ it (unsupported input, the derivative came out larger than
+  the original, or the encode errored), or when its URL didn't resolve in your build. All three look the
+  same to you, and `?? item.src` covers all three.
+- **Strictly optional.** No `derived` glob and no `baseUrl` ⇒ every `variants` map is empty and
+  `variant()` returns `null` everywhere; nothing else changes. A workspace whose manifest predates
+  compression behaves identically.
+- **Static-assets mode works too** — derivatives are synthesized as `` `${baseUrl}/derived/<preset>/<file>` ``,
+  gated independently of the originals.
+- **Preset ids are the workspace's**, not the reader's — enumerate with `Object.keys` over a
+  representative item's `variants`, or read them off the editor's compression settings.
 
 ## Posts — rendered markdown (Item 14)
 
@@ -395,15 +484,16 @@ silent breakage is exactly what the reader exists to prevent.
 The reader is deliberately defensive: it never throws on missing data, so a wiring mistake shows up as
 _silence_, not an error. The usual suspects, quickest first:
 
-| Symptom                                                       | Likely cause                                                             | Fix                                                                                                |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| **All images `src: null` / `missing: true`** — records fine   | `files` glob prefix wrong, or it's missing `query: '?url'`               | Point `files` at `…/media/files/*` **with `query: '?url'`**; it must share the `data` prefix       |
-| **Everything empty** — `media()` / `records()` all length `0` | The `data` glob matched nothing (wrong prefix, or `$assets` alias unset) | Confirm the alias resolves and the prefix matches where the workspace actually lives               |
-| **`WorkspaceFormatError` at load**                            | No `media/manifest.json` under the prefix, or a pre-file-first workspace | Point at a migrated workspace; run `npm run upgrade-data -- <root> --apply` on an old one          |
-| **One class/type empty**, others fine                         | Typo in the id (`mm.media('phtoos')`)                                    | List real ids with `mm.classes()` / `mm.types()`                                                   |
-| **`field('x')` is `undefined`**                               | Key typo, or the field only exists in a _class view_                     | Inspect `Object.keys(item.fields)`; blob-level items (`mm.media()`, `mm.file`) have empty `fields` |
-| **`Cannot find module 'media-manager/reader/vite'`**          | `dist/reader/` not built (`file:`/git installs may skip it)              | Run `npm run build:reader` in the media-manager checkout                                           |
-| **`file()` / `record()` returns `null`**                      | The referenced id is dangling (target was deleted)                       | Expected — guard with `?.`; not a bug                                                              |
+| Symptom                                                       | Likely cause                                                                                     | Fix                                                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| **All images `src: null` / `missing: true`** — records fine   | `files` glob prefix wrong, or it's missing `query: '?url'`                                       | Point `files` at `…/media/files/*` **with `query: '?url'`**; it must share the `data` prefix         |
+| **Everything empty** — `media()` / `records()` all length `0` | The `data` glob matched nothing (wrong prefix, or `$assets` alias unset)                         | Confirm the alias resolves and the prefix matches where the workspace actually lives                 |
+| **`WorkspaceFormatError` at load**                            | No `media/manifest.json` under the prefix, or a pre-file-first workspace                         | Point at a migrated workspace; run `npm run upgrade-data -- <root> --apply` on an old one            |
+| **One class/type empty**, others fine                         | Typo in the id (`mm.media('phtoos')`)                                                            | List real ids with `mm.classes()` / `mm.types()`                                                     |
+| **`field('x')` is `undefined`**                               | Key typo, or the field only exists in a _class view_                                             | Inspect `Object.keys(item.fields)`; blob-level items (`mm.media()`, `mm.file`) have empty `fields`   |
+| **`Cannot find module 'media-manager/reader/vite'`**          | `dist/reader/` not built (`file:`/git installs may skip it)                                      | Run `npm run build:reader` in the media-manager checkout                                             |
+| **`file()` / `record()` returns `null`**                      | The referenced id is dangling (target was deleted)                                               | Expected — guard with `?.`; not a bug                                                                |
+| **`variant('web')` always `null`**                            | No `derived` glob (or wrong prefix / missing `query: '?url'`), or the preset was never generated | Point `derived` at `…/media/derived/*/*` with `query: '?url'`; check `item.variants` for what exists |
 
 ## Guarantees
 

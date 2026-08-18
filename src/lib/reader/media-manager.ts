@@ -14,8 +14,13 @@
  */
 
 import { Collection } from './collection.js';
-import { MediaItem, MMRecord, type ReaderContext } from './items.js';
-import { parseManifest, WorkspaceFormatError, type Manifest } from './manifest.js';
+import { MediaItem, MMRecord, type ReaderContext, type VariantInfo } from './items.js';
+import {
+	parseManifest,
+	WorkspaceFormatError,
+	type Manifest,
+	type ManifestFileEntry
+} from './manifest.js';
 import {
 	PostCollection,
 	DEFAULT_POSTS_THEME,
@@ -85,6 +90,14 @@ export interface ParsedWorkspace {
 	posts?: Record<string, Record<string, string>>;
 	/** filename → resolved (bundler-hashed) asset URL. */
 	assets?: Record<string, string>;
+	/**
+	 * preset id → (filename → resolved asset URL) for compressed derivatives (Item 15). Deliberately a
+	 * **nested, preset-keyed** map rather than a flat one: two presets routinely emit the same basename
+	 * (`derived/web/x.webp` and `derived/thumb/x.webp`), which would collide in a flat index — and
+	 * folding derivatives into {@link assets} would also make it non-empty and thereby disable
+	 * static-assets `baseUrl` synthesis for the originals.
+	 */
+	derivedAssets?: Record<string, Record<string, string>>;
 }
 
 /** The glob maps a Vite host passes to {@link MediaManager.load}. */
@@ -95,6 +108,12 @@ export interface WorkspaceGlobs {
 	files: Record<string, unknown>;
 	/** `import.meta.glob('<root>/posts/**\/*.md', { eager: true, query: '?raw', import: 'default' })` — Item 14. */
 	posts?: Record<string, unknown>;
+	/**
+	 * `import.meta.glob('<root>/media/derived/*\/*', { eager: true, query: '?url', import: 'default' })`
+	 * — the compressed derivatives (Item 15). Optional: omit it and `variant()` simply yields `null`
+	 * everywhere (unless static-assets `baseUrl` synthesizes the URLs instead).
+	 */
+	derived?: Record<string, unknown>;
 }
 
 /** Reader options passed as the second arg to {@link MediaManager.load}/{@link MediaManager.fromParsed}. */
@@ -107,6 +126,10 @@ export interface ReaderOptions {
 	 * `` `${baseUrl}/${encodeURIComponent(file_name)}` `` for every manifest entry — so the host serves
 	 * blobs from a CDN / static folder and never bundles them into a build (the fix for size-capped
 	 * serverless functions). A `files` glob, when present, always wins. See README "Static assets".
+	 *
+	 * Compressed derivatives (Item 15) are synthesized the same way, one directory deeper:
+	 * `` `${baseUrl}/derived/${preset}/${file_name}` ``, gated independently on the derived index being
+	 * empty (so a `derived` glob and a `baseUrl` for originals can coexist, and vice versa).
 	 */
 	assets?: {
 		/** Web-address prefix the blobs are served at (e.g. `/media`). A trailing slash is optional. */
@@ -123,6 +146,14 @@ export class MediaManager implements ReaderContext {
 	private readonly globalsRecordRaw: RawRecord | null;
 	/** Lowercased filename → asset URL (ext-case tolerant matching). */
 	private readonly assetIndex: Map<string, string>;
+	/**
+	 * preset id → (lowercased derivative filename → asset URL) — the compressed-derivative index
+	 * (Item 15). **Kept strictly separate from {@link assetIndex}** for two reasons, both load-bearing:
+	 * (1) `baseUrl` synthesis for the originals fires only when `assetIndex.size === 0`, so folding
+	 * derivatives in would silently null out every original's `src` in static-assets mode; and (2) two
+	 * presets commonly emit the same basename, which a flat index would collide.
+	 */
+	private readonly derivedIndex: Map<string, Map<string, string>>;
 	/** Memoized blob-level MediaItems by id (so resolved references share identity). */
 	private readonly fileCache = new Map<string, MediaItem | null>();
 	/** id → raw record, across every record type + the globals singleton (for `recordById`). */
@@ -168,6 +199,41 @@ export class MediaManager implements ReaderContext {
 				}
 				originalByKey.set(key, name);
 				this.assetIndex.set(key, `${prefix}/${encode ? encodeURIComponent(name) : name}`);
+			}
+		}
+
+		// Compressed derivatives (Item 15) — a SEPARATE, preset-keyed index. Populating it must never
+		// touch `assetIndex`: the `assetIndex.size === 0` gate above is what enables baseUrl synthesis
+		// for the originals, so a workspace with derivatives would otherwise lose every original's src.
+		this.derivedIndex = new Map();
+		for (const [preset, byName] of Object.entries(parsed.derivedAssets ?? {})) {
+			if (!byName || typeof byName !== 'object') continue;
+			for (const [filename, url] of Object.entries(byName)) {
+				if (typeof url !== 'string') continue;
+				let bucket = this.derivedIndex.get(preset);
+				if (!bucket) this.derivedIndex.set(preset, (bucket = new Map()));
+				bucket.set(filename.toLowerCase(), url);
+			}
+		}
+
+		// Static-assets mode for derivatives, mirroring the originals above but keyed per preset and
+		// gated on its OWN emptiness. Unlike the originals we don't fail on a case-insensitive name
+		// collision — a derivative is an optimization the caller can fall back from (`?? item.src`),
+		// so last-write-wins is preferable to refusing to load the whole workspace.
+		if (this.derivedIndex.size === 0 && options?.assets?.baseUrl) {
+			const { baseUrl, encode = true } = options.assets;
+			const prefix = baseUrl.replace(/\/+$/, '');
+			for (const entry of Object.values(this.manifest.files)) {
+				for (const [preset, d] of Object.entries(entry.derived ?? {})) {
+					const name = d.file_name;
+					if (!name) continue; // skipped entry — no file exists to point at
+					let bucket = this.derivedIndex.get(preset);
+					if (!bucket) this.derivedIndex.set(preset, (bucket = new Map()));
+					bucket.set(
+						name.toLowerCase(),
+						`${prefix}/derived/${preset}/${encode ? encodeURIComponent(name) : name}`
+					);
+				}
 			}
 		}
 
@@ -233,11 +299,12 @@ export class MediaManager implements ReaderContext {
 	 *   data:  import.meta.glob('$assets/mm/**\/*.json', { eager: true, import: 'default' }),
 	 *   files: import.meta.glob('$assets/mm/media/files/*', { eager: true, query: '?url', import: 'default' }),
 	 *   posts: import.meta.glob('$assets/mm/posts/**\/*.md', { eager: true, query: '?raw', import: 'default' }),
+	 *   derived: import.meta.glob('$assets/mm/media/derived/*\/*', { eager: true, query: '?url', import: 'default' }),
 	 * }, { posts: { theme: 'catppuccin-mocha' } });
 	 */
 	static load(globs: WorkspaceGlobs, options?: ReaderOptions): MediaManager {
 		return MediaManager.fromParsed(
-			classifyGlobs(globs.data ?? {}, globs.files ?? {}, globs.posts ?? {}),
+			classifyGlobs(globs.data ?? {}, globs.files ?? {}, globs.posts ?? {}, globs.derived ?? {}),
 			options
 		);
 	}
@@ -248,6 +315,46 @@ export class MediaManager implements ReaderContext {
 	private assetFor(filename: string): string | null {
 		if (!filename) return null;
 		return this.assetIndex.get(filename.toLowerCase()) ?? null;
+	}
+
+	/**
+	 * Resolve a manifest entry's `derived` block into the `preset → {@link VariantInfo}` map a
+	 * {@link MediaItem} carries (Item 15).
+	 *
+	 * The single resolution point for variants, shared by {@link fileById} and the class-view branch of
+	 * {@link media} — the two places that construct a `MediaItem` — so the blob-level and class-level
+	 * views can't drift on which presets a file appears to have.
+	 *
+	 * Two kinds of entry are dropped, both yielding "no variant for this preset" rather than a partial
+	 * record: a **skipped** entry (no `file_name`, so no file exists) and one whose filename isn't in
+	 * the derived index (the host wired no `derived` glob / no `baseUrl`, or the file is absent). That
+	 * guarantee is what lets {@link VariantInfo.src} be non-nullable.
+	 *
+	 * @param entry - The blob's manifest entry, or `undefined` for a dangling class-record id.
+	 * @returns A map of resolved variants — empty (not `undefined`) when there are none.
+	 *
+	 * Concerns / future improvements: dimensions/size are copied from the manifest verbatim, so they
+	 * describe the **derivative**, not the original. Resolution is eager per item; if huge workspaces
+	 * ever make that matter it can become lazy behind the accessor without changing the public shape.
+	 */
+	private variantsFor(entry: ManifestFileEntry | undefined): Map<string, VariantInfo> {
+		const out = new Map<string, VariantInfo>();
+		if (!entry?.derived) return out;
+		for (const [preset, d] of Object.entries(entry.derived)) {
+			const name = d.file_name;
+			if (!name) continue;
+			const src = this.derivedIndex.get(preset)?.get(name.toLowerCase()) ?? null;
+			if (src == null) continue;
+			out.set(preset, {
+				preset,
+				src,
+				width: d.width ?? 0,
+				height: d.height ?? 0,
+				size: d.size ?? 0,
+				ssim: typeof d.ssim === 'number' ? d.ssim : null
+			});
+		}
+		return out;
 	}
 
 	/**
@@ -269,6 +376,7 @@ export class MediaManager implements ReaderContext {
 				classes: entry.classes,
 				missing: entry.missing || src == null,
 				fields: {},
+				variants: this.variantsFor(entry),
 				ctx: this
 			});
 		}
@@ -321,6 +429,7 @@ export class MediaManager implements ReaderContext {
 					classes: entry?.classes ?? [classId],
 					missing: !entry || entry.missing || src == null,
 					fields: stripSystemKeys(rawRecord),
+					variants: this.variantsFor(entry),
 					ctx: this
 				})
 			);
@@ -440,19 +549,22 @@ function stripSystemKeys(raw: RawRecord): RawRecord {
  * Classify two Vite glob maps into a {@link ParsedWorkspace} by inspecting each path. Recognizes the
  * file-first layout (`media/manifest.json`, `media/classes/<id>.json`, `records/<typeId>/{settings,data}.json`,
  * `globals/{settings,data}.json`); other JSON (root/`media`/`records` settings) is ignored. Asset
- * entries are keyed by basename.
+ * entries are keyed by basename; derivative assets (`media/derived/<preset>/<file>`) are keyed by
+ * preset **and** basename, since the same basename recurs across presets.
  */
 function classifyGlobs(
 	dataGlob: Record<string, unknown>,
 	filesGlob: Record<string, unknown>,
-	postsGlob: Record<string, unknown> = {}
+	postsGlob: Record<string, unknown> = {},
+	derivedGlob: Record<string, unknown> = {}
 ): ParsedWorkspace {
 	const parsed: ParsedWorkspace = {
 		manifest: undefined,
 		classes: {},
 		recordTypes: {},
 		posts: {},
-		assets: {}
+		assets: {},
+		derivedAssets: {}
 	};
 
 	for (const [path, value] of Object.entries(dataGlob)) {
@@ -478,6 +590,15 @@ function classifyGlobs(
 		if (typeof url !== 'string') continue;
 		const base = path.replace(/\\/g, '/').split('/').pop();
 		if (base) parsed.assets![base] = url;
+	}
+
+	// Derivatives (`?url` glob): `media/derived/<preset>/<file>` → parsed.derivedAssets[preset][file].
+	// Kept out of `parsed.assets` on purpose — see ParsedWorkspace.derivedAssets.
+	for (const [path, url] of Object.entries(derivedGlob)) {
+		if (typeof url !== 'string') continue;
+		const m = path.replace(/\\/g, '/').match(/(^|\/)media\/derived\/([^/]+)\/([^/]+)$/);
+		if (!m) continue;
+		(parsed.derivedAssets![m[2]] ??= {})[m[3]] = url;
 	}
 
 	// Posts (`?raw` glob): `posts/<collection>/<slug>.md` → parsed.posts[collection][slug] = rawString.

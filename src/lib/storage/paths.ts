@@ -28,6 +28,8 @@ export const MEDIA_DIR_NAME = 'media' as const;
 export const GLOBAL_FILES_DIR_NAME = 'files' as const;
 /** Folder name under {@link getMediaDir} where per-class metadata files live. */
 export const CLASSES_DIR_NAME = 'classes' as const;
+/** Folder name holding generated compressed derivatives, one subfolder per preset (Item 15). */
+export const DERIVED_DIR_NAME = 'derived' as const;
 /** Folder name under {@link getRootDir} that holds the `json`-kind record types (Item 18 reorg). */
 export const RECORDS_DIR_NAME = 'records' as const;
 /** Folder name under {@link getRootDir} that holds the markdown Posts sub-app (Item 14). */
@@ -80,6 +82,49 @@ export function getGlobalFilesDir(): string {
  */
 export function isStaticAssetsMode(): boolean {
 	return Boolean(process.env.MEDIA_MANAGER_ASSETS_DIR?.trim());
+}
+
+/**
+ * Absolute path to the root of the generated-derivatives tree (Item 15 compression).
+ *
+ * Mirrors the {@link getGlobalFilesDir} seam so both storage modes compose without extra config:
+ *
+ * - **Classic mode:** `<root>/media/derived` — a *sibling* of `media/files`, inside the workspace.
+ * - **Static-assets mode:** `<assetsDir>/derived` — *inside* the published asset root, so the reader's
+ *   `baseUrl` composes to `${baseUrl}/derived/<preset>/<name>` with nothing further to configure.
+ *
+ * Derivatives are generated, never authored: deleting this tree is always safe and always recoverable
+ * by a backfill. Nothing here is auto-adopted into the manifest — {@link readGlobalBlobNames} filters
+ * to plain files, so this subdirectory is invisible to reconcile in both modes.
+ */
+export function getDerivedRootDir(): string {
+	return derivedRootForBlobDir(getGlobalFilesDir());
+}
+
+/**
+ * Where derivatives live for a **given** blob directory — the same rule as {@link getDerivedRootDir},
+ * but answerable for a directory other than the currently-active one.
+ *
+ * The storage-location migration needs exactly this: it has to know the *destination's* derived root
+ * while the process is still running in the source's mode.
+ *
+ * @param blobDir - An absolute blob directory (classic `<root>/media/files`, or a static assets dir).
+ */
+export function derivedRootForBlobDir(blobDir: string): string {
+	const classic = path.join(getMediaDir(), GLOBAL_FILES_DIR_NAME);
+	if (path.resolve(blobDir) === path.resolve(classic)) {
+		return path.join(getMediaDir(), DERIVED_DIR_NAME);
+	}
+	return path.join(path.resolve(blobDir), DERIVED_DIR_NAME);
+}
+
+/**
+ * Absolute path to one preset's derivative directory (`…/derived/<presetId>`).
+ *
+ * @param presetId - The compression preset id (already validated as a safe slug by the caller).
+ */
+export function getDerivedDir(presetId: string): string {
+	return path.join(getDerivedRootDir(), presetId);
 }
 
 /** Absolute path to the global blob manifest (`<root>/media/manifest.json`). */

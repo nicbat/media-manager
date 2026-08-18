@@ -14,6 +14,7 @@ import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { assertSafeBasename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
+import { deleteDerivedForBlob, renameDerivedForBlob } from './derived.js';
 import {
 	isProtectedSchemaKey,
 	schemaUserFieldKeys,
@@ -36,6 +37,7 @@ import {
 	removeClassFromIndex,
 	applyMembershipIndex,
 	setEntryDimensions,
+	setEntrySizes,
 	availableFromManifest,
 	missingFileFields,
 	missingFilesMap,
@@ -902,6 +904,36 @@ async function backfillDimensions(manifest: Manifest, diskNames: Set<string>): P
 	await setEntryDimensions(dims);
 }
 
+/**
+ * Backfill byte sizes into the manifest for on-disk blobs lacking them — the size twin of
+ * {@link backfillDimensions}, and lazy for the same reason (only entries with no `size` are stat'ed, so
+ * steady state costs nothing).
+ *
+ * `size` was historically written **only at mint**, so every blob adopted by {@link reconcile} — anything
+ * hand-dropped into the blob dir — had none. That is visible today as an empty `file:size` cell in the
+ * verbose grid, and it is load-bearing for compression (Item 15): the savings headline sums original
+ * bytes, and `derived.source_size` is compared against this to notice a re-uploaded original.
+ *
+ * @param manifest - The reconciled manifest (mutated in place so the caller's projection sees the sizes).
+ * @param diskNames - Basenames currently present in the blob dir.
+ */
+async function backfillSizes(manifest: Manifest, diskNames: Set<string>): Promise<void> {
+	const filesDir = getGlobalFilesDir();
+	const sizes = new Map<string, number>();
+	for (const [id, entry] of Object.entries(manifest.files)) {
+		if (entry.size != null) continue;
+		if (!diskNames.has(entry.file_name)) continue;
+		try {
+			const stat = await fs.stat(path.join(filesDir, entry.file_name));
+			sizes.set(id, stat.size);
+			entry.size = stat.size;
+		} catch {
+			/* skip */
+		}
+	}
+	await setEntrySizes(sizes);
+}
+
 function fileItemFromEntry(id: string, manifest: Manifest): FileItem {
 	const e = manifest.files[id];
 	return {
@@ -965,6 +997,7 @@ export async function listAllFiles(params?: {
 }): Promise<FileListResponse> {
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
+	await backfillSizes(manifest, diskNames);
 
 	const q = params?.query ? params.query.toLowerCase() : null;
 	const classIds = params?.classIds ?? null;
@@ -1108,6 +1141,7 @@ export async function listClassMembers(
 	const file = await readClassFile(id);
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
+	await backfillSizes(manifest, diskNames);
 	const available = availableFromManifest(manifest, diskNames);
 
 	const groupBy = params?.groupBy ?? null;
@@ -1221,6 +1255,9 @@ export async function deleteFromDiskById(id: string): Promise<void> {
 		const e = err as NodeJS.ErrnoException;
 		if (e.code !== 'ENOENT') throw err;
 	});
+	// Compressed twins of a blob that no longer exists are pure garbage (Item 15). Done before the
+	// manifest entry goes, since that entry is what names them.
+	await deleteDerivedForBlob(id);
 	await removeFileId(id);
 	for (const cid of listClassIds()) {
 		await withFileLock(classLockPath(cid), async () => {
@@ -1264,6 +1301,11 @@ export async function renameBlobById(id: string, newFilename: string): Promise<s
 		await fs.rename(newPath, oldPath).catch(() => {});
 		throw err;
 	}
+	// Keep the derivatives' stem in step (Item 15). Deliberately **after** the original's rename has
+	// committed, and deliberately not part of the rollback path above: a derivative left under its old
+	// name is harmless (every lookup reads its `file_name` from the manifest), whereas unwinding a
+	// half-completed rename of the original is not.
+	await renameDerivedForBlob(id, safe);
 	return safe;
 }
 

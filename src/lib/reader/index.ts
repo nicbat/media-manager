@@ -24,12 +24,13 @@ export {
 	type PostsTheme
 } from './posts.js';
 export { Collection, type FieldAccessible } from './collection.js';
-export { MediaItem, MMRecord, type ReaderContext } from './items.js';
+export { MediaItem, MMRecord, type ReaderContext, type VariantInfo } from './items.js';
 export {
 	parseManifest,
 	WorkspaceFormatError,
 	SUPPORTED_MANIFEST_VERSION,
 	type Manifest,
-	type ManifestFileEntry
+	type ManifestFileEntry,
+	type DerivedEntry
 } from './manifest.js';
 export { normalizeUrlValue, normalizeFieldValue, type UrlValue } from './values.js';

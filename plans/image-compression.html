@@ -1,0 +1,1540 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compression Presets</title>
+    <style>
+      /* ─────────────────────────────────────────────────────────────
+         Tokens. Light is the bare :root; dark redefines tokens only.
+         Three states handled: stamped light, stamped dark, unstamped.
+         ───────────────────────────────────────────────────────────── */
+      :root {
+        --bg: #f3f5f8;
+        --panel: #ffffff;
+        --panel-2: #e9ecf1;
+        --panel-3: #dfe3ea;
+        --line: #d5dae2;
+        --line-soft: #e4e8ee;
+        --ink: #151a21;
+        --ink-2: #3a444f;
+        --muted: #626e7d;
+        --accent: #a2660f;
+        --accent-ink: #7d4e08;
+        --accent-soft: #fbf1de;
+        --good: #1b7346;
+        --good-soft: #e2f2e9;
+        --info: #275aad;
+        --info-soft: #e4ecfa;
+        --warn: #9c4c1f;
+        --warn-soft: #faece1;
+        --bad: #a52f4d;
+        --bad-soft: #fae7ec;
+        --shadow: 0 1px 2px rgba(20, 26, 34, 0.06), 0 8px 24px -12px rgba(20, 26, 34, 0.18);
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #0c0f13;
+          --panel: #141920;
+          --panel-2: #1a212a;
+          --panel-3: #212a35;
+          --line: #2a323d;
+          --line-soft: #222a34;
+          --ink: #e6ecf3;
+          --ink-2: #c2cddb;
+          --muted: #93a1b1;
+          --accent: #ffc857;
+          --accent-ink: #ffd987;
+          --accent-soft: #2b2415;
+          --good: #63d493;
+          --good-soft: #14291e;
+          --info: #78adff;
+          --info-soft: #16202f;
+          --warn: #f2a76a;
+          --warn-soft: #2b2018;
+          --bad: #ff90b0;
+          --bad-soft: #2c1a21;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px -14px rgba(0, 0, 0, 0.8);
+        }
+      }
+
+      :root[data-theme="dark"] {
+        --bg: #0c0f13;
+        --panel: #141920;
+        --panel-2: #1a212a;
+        --panel-3: #212a35;
+        --line: #2a323d;
+        --line-soft: #222a34;
+        --ink: #e6ecf3;
+        --ink-2: #c2cddb;
+        --muted: #93a1b1;
+        --accent: #ffc857;
+        --accent-ink: #ffd987;
+        --accent-soft: #2b2415;
+        --good: #63d493;
+        --good-soft: #14291e;
+        --info: #78adff;
+        --info-soft: #16202f;
+        --warn: #f2a76a;
+        --warn-soft: #2b2018;
+        --bad: #ff90b0;
+        --bad-soft: #2c1a21;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px -14px rgba(0, 0, 0, 0.8);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 400 15px/1.62 var(--sans);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap { max-width: 1000px; margin: 0 auto; padding: 40px 24px 128px; }
+
+      /* ── Header ───────────────────────────────────────────────── */
+      .eyebrow {
+        font: 600 11px/1 var(--mono);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .eyebrow .dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.5; }
+      h1 {
+        font: 600 34px/1.12 var(--mono);
+        letter-spacing: -0.02em;
+        margin: 16px 0 10px;
+        text-wrap: balance;
+      }
+      .lede { color: var(--ink-2); max-width: 66ch; font-size: 16.5px; margin: 0; }
+
+      .metabar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 22px;
+      }
+      .chip {
+        font: 600 11px/1 var(--mono);
+        letter-spacing: 0.05em;
+        padding: 7px 10px;
+        border-radius: 6px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chip b { color: var(--ink); font-weight: 600; }
+      .chip.good { background: var(--good-soft); border-color: transparent; color: var(--good); }
+      .chip.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+      .chip.acc { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+
+      nav.toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 28px 0 0;
+        padding: 16px 0 0;
+        border-top: 1px solid var(--line);
+      }
+      nav.toc a {
+        font: 500 12px/1 var(--mono);
+        text-decoration: none;
+        color: var(--muted);
+        padding: 7px 10px;
+        border-radius: 6px;
+        transition: background 0.15s, color 0.15s;
+      }
+      nav.toc a:hover, nav.toc a:focus-visible { background: var(--panel-2); color: var(--ink); }
+      a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      /* ── Sections ─────────────────────────────────────────────── */
+      section { margin-top: 60px; scroll-margin-top: 24px; }
+      section > h2 {
+        font: 600 13px/1 var(--mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 6px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      section > h2 .rule { flex: 1; }
+      .h3 {
+        font: 600 19px/1.3 var(--sans);
+        letter-spacing: -0.01em;
+        margin: 22px 0 8px;
+        text-wrap: balance;
+      }
+      .h4 {
+        font: 600 12px/1 var(--mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 26px 0 10px;
+      }
+      p { margin: 10px 0; max-width: 72ch; }
+      .muted { color: var(--muted); }
+      .small { font-size: 13.5px; }
+      ul, ol { margin: 10px 0; padding-left: 20px; max-width: 72ch; }
+      li { margin: 6px 0; }
+      li::marker { color: var(--muted); }
+      strong { font-weight: 640; }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.87em;
+        background: var(--panel-2);
+        border: 1px solid var(--line-soft);
+        border-radius: 4px;
+        padding: 1px 5px;
+        white-space: nowrap;
+      }
+      pre {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.65;
+        margin: 14px 0;
+        box-shadow: var(--shadow);
+      }
+      pre code { background: none; border: none; padding: 0; font-size: inherit; white-space: pre; }
+      .c { color: var(--muted); }
+      .k { color: var(--info); }
+      .s { color: var(--good); }
+      .a { color: var(--accent); }
+      .d { color: var(--bad); }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px 22px;
+        box-shadow: var(--shadow);
+      }
+      .note {
+        border-left: 3px solid var(--accent);
+        background: var(--accent-soft);
+        border-radius: 0 8px 8px 0;
+        padding: 14px 18px;
+        margin: 18px 0;
+        font-size: 14px;
+      }
+      .note p { margin: 6px 0; max-width: 68ch; }
+      .note .tag {
+        font: 600 10px/1 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent-ink);
+        display: block;
+        margin-bottom: 6px;
+      }
+      .note.risk { border-left-color: var(--bad); background: var(--bad-soft); }
+      .note.risk .tag { color: var(--bad); }
+
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+      @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+
+      .tablewrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); }
+      table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+      th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+      thead th {
+        font: 600 10.5px/1 var(--mono);
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--panel-2);
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      tbody tr:last-child td { border-bottom: none; }
+      td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+      td.key { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); white-space: nowrap; }
+
+      /* ── The reduction bar: the page's one repeating motif ────── */
+      .redbar { display: block; height: 8px; border-radius: 4px; background: var(--panel-3); overflow: hidden; }
+      .redbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+      .redbar.g i { background: var(--good); }
+
+      /* ── UI mockups ───────────────────────────────────────────── */
+      .mock {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        overflow: hidden;
+        margin: 18px 0;
+        box-shadow: var(--shadow);
+        font-size: 13px;
+      }
+      .mock .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        background: var(--panel-2);
+        border-bottom: 1px solid var(--line);
+        font: 500 11.5px/1 var(--mono);
+        color: var(--muted);
+      }
+      .mock .bar .lights { display: flex; gap: 5px; margin-right: 4px; }
+      .mock .bar .lights i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); display: block; }
+      .mock .body { padding: 18px 20px; }
+      .mock .caption {
+        padding: 10px 14px;
+        border-top: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+
+      .mhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+      .mtitle { font: 600 20px/1.2 var(--sans); letter-spacing: -0.01em; }
+      .msub { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+
+      .btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        font: 550 12.5px/1 var(--sans);
+        padding: 8px 13px; border-radius: 7px;
+        border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+        cursor: default;
+      }
+      .btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+      :root[data-theme="dark"] .btn.primary { color: #17130a; }
+      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #17130a; } }
+      .btn.ghost { background: transparent; }
+
+      .statrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      @media (max-width: 700px) { .statrow { grid-template-columns: repeat(2, 1fr); } }
+      .stat { background: var(--panel); padding: 14px 16px; }
+      .stat .lbl { font: 600 10px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+      .stat .val { font: 600 23px/1.1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 8px; }
+      .stat .val.good { color: var(--good); }
+      .stat .sub { font-size: 11.5px; color: var(--muted); margin-top: 5px; font-variant-numeric: tabular-nums; }
+
+      .pill {
+        font: 600 10px/1 var(--mono); letter-spacing: 0.07em;
+        padding: 4px 7px; border-radius: 5px; display: inline-block; white-space: nowrap;
+      }
+      .pill.ok { background: var(--good-soft); color: var(--good); }
+      .pill.info { background: var(--info-soft); color: var(--info); }
+      .pill.warn { background: var(--warn-soft); color: var(--warn); }
+      .pill.bad { background: var(--bad-soft); color: var(--bad); }
+      .pill.neutral { background: var(--panel-3); color: var(--muted); }
+
+      .qbars { display: flex; align-items: flex-end; gap: 4px; height: 62px; }
+      .qbars .qb { flex: 1; border-radius: 3px 3px 0 0; background: var(--good); position: relative; }
+      .qbars .qb.s3 { background: var(--info); }
+      .qbars .qb.s2 { background: var(--warn); }
+      .qbars .qb.s1 { background: var(--bad); }
+      .qlabels { display: flex; gap: 4px; margin-top: 7px; }
+      .qlabels span { flex: 1; text-align: center; font: 500 9.5px/1.3 var(--mono); color: var(--muted); }
+
+      .listrow {
+        display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px;
+        align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+      }
+      .listrow:last-child { border-bottom: none; }
+      .listrow .fname { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .listrow .n { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+      .field { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--line-soft); }
+      .field:last-child { border-bottom: none; }
+      .field .fl { font-size: 13px; }
+      .field .fh { font-size: 11.5px; color: var(--muted); margin-top: 2px; max-width: 44ch; }
+      .toggle { width: 36px; height: 20px; border-radius: 999px; background: var(--panel-3); position: relative; flex: none; }
+      .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+      .toggle.on { background: var(--good); }
+      .toggle.on::after { left: 18px; }
+      .inp { font: 500 12px/1 var(--mono); padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 64px; }
+      .sel { font: 500 12px/1 var(--mono); padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); }
+
+      .progress { height: 8px; border-radius: 4px; background: var(--panel-3); overflow: hidden; }
+      .progress i { display: block; height: 100%; background: var(--accent); }
+
+      .preset-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--panel-2); }
+      .preset-card .pname { font: 600 13px/1 var(--mono); color: var(--accent-ink); }
+      .preset-card .pmeta { font: 500 11.5px/1.5 var(--mono); color: var(--muted); margin-top: 7px; font-variant-numeric: tabular-nums; }
+
+      .checkline { display: flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 13px; }
+      .box { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--line); flex: none; background: var(--panel); }
+      .box.on { background: var(--accent); border-color: var(--accent); position: relative; }
+      .box.on::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg); }
+      :root[data-theme="dark"] .box.on::after { border-color: #17130a; }
+      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .box.on::after { border-color: #17130a; } }
+
+      .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+      .tile { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--panel-2); }
+      .tile .thumb { height: 62px; background: linear-gradient(135deg, var(--panel-3), var(--line)); }
+      .tile .tbody { padding: 8px 9px; }
+      .tile .tname { font: 500 11px/1.3 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tile dl { margin: 7px 0 0; font: 500 10px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+      .tile dl div { display: flex; justify-content: space-between; gap: 6px; }
+      .tile dt { color: var(--muted); }
+      .tile dd { margin: 0; }
+
+      .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 12px; align-items: center; margin: 18px 0; }
+      @media (max-width: 780px) { .flow { grid-template-columns: 1fr; } .flow .arrow { display: none; } }
+      .flow .node { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--panel); box-shadow: var(--shadow); }
+      .flow .node .nt { font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+      .flow .node .nv { font: 500 12.5px/1.5 var(--mono); margin-top: 8px; }
+      .flow .arrow { color: var(--accent); font-size: 18px; text-align: center; }
+
+      .phase { display: grid; grid-template-columns: auto 1fr; gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+      .phase:last-child { border-bottom: none; }
+      @media (max-width: 640px) { .phase { grid-template-columns: 1fr; gap: 10px; } }
+      .phase .pn {
+        font: 600 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
+        color: var(--accent-ink); background: var(--accent-soft);
+        padding: 8px 10px; border-radius: 6px; height: fit-content; white-space: nowrap;
+      }
+      .phase h3 { font: 600 17px/1.3 var(--sans); margin: 0 0 6px; letter-spacing: -0.01em; }
+
+      footer { margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="eyebrow">
+          <span>Plan</span><span class="dot"></span>
+          <span>Backlog Item 15</span><span class="dot"></span>
+          <span>Asset pipeline &amp; deps</span>
+        </div>
+        <h1>Compression Presets</h1>
+        <p class="lede">
+          Generate smaller twins of every image alongside the originals, let each part of a site
+          choose which one it wants, and put a real number on both the bandwidth saved and the
+          quality given up.
+        </p>
+        <div class="metabar">
+          <span class="chip acc"><b>Unblocks</b> Item 15</span>
+          <span class="chip">Resolves <b>Item 35</b> (adopt sharp)</span>
+          <span class="chip">Size <b>L</b> <span class="muted">(re-scoped from M)</span></span>
+          <span class="chip good">Open questions <b>0</b></span>
+          <span class="chip">1 deferred decision</span>
+          <span class="chip">Not 1.0-blocking</span>
+        </div>
+        <div class="note" style="margin-top:20px">
+          <span class="tag">Revision 2 — after adversarial review against source</span>
+          <p>
+            A source-level review found eight claims in revision 1 that the codebase contradicts.
+            Corrections are marked <span class="pill bad" style="font-size:9px">fixed in r2</span>
+            throughout. The preset model survived unchanged; the damage was all in the claims made
+            about existing plumbing. Notably <strong>one risk in r1 was fabricated</strong> — see
+            <a href="#disk">On disk</a>.
+          </p>
+          <p>
+            <strong>r3</strong> settles the two decisions r2 left open. Derivatives are
+            <strong>committed alongside the originals</strong>. Versioned (hashed) URLs are
+            <strong>deferred by decision</strong>, with the reasoning and the concern behind it
+            recorded in <a href="#cache">Keeping caches honest</a> — phase 1 ships clean, shareable
+            filenames on a short cache lifetime instead. That reinstates the stem-collision rule r2
+            had deleted.
+          </p>
+        </div>
+        <nav class="toc">
+          <a href="#decisions">Decisions</a>
+          <a href="#model">The model</a>
+          <a href="#disk">On disk</a>
+          <a href="#page">Compression page</a>
+          <a href="#settings">Presets &amp; classes</a>
+          <a href="#perfile">Per-file</a>
+          <a href="#quality">Quality metric</a>
+          <a href="#cache">Cache-busting</a>
+          <a href="#reader">Reader API</a>
+          <a href="#phases">Phases</a>
+          <a href="#risks">Risks</a>
+        </nav>
+      </header>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="decisions">
+        <h2>Decisions <span class="rule"></span></h2>
+        <p>
+          Settled in the design interview. Everything below is downstream of this table — if one of
+          these flips, the plan changes shape.
+        </p>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>Question</th><th>Decision</th><th>Consequence</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>What gets generated</td>
+                <td><strong>One compressed twin first, width ladder later</strong></td>
+                <td>Phase 1 ships format+quality only; the data layout already carries <code>width</code> so phase 2 is additive, not a migration.</td>
+              </tr>
+              <tr>
+                <td>When it runs</td>
+                <td><strong>Automatic on upload + a backfill job</strong></td>
+                <td>Upload gets a background step; a visible one-time job covers everything already on disk.</td>
+              </tr>
+              <tr>
+                <td>Multi-class conflict</td>
+                <td><strong>Presets are the unit; classes subscribe</strong></td>
+                <td>A blob's derivative set is the <em>union</em> of its classes' presets. No tiebreak exists, because nothing competes.</td>
+              </tr>
+              <tr>
+                <td>Where they live</td>
+                <td><code>media/derived/&lt;preset&gt;/</code></td>
+                <td>
+                  Sibling of <code>media/files/</code>. Always safe to delete and rebuild locally.
+                  <strong>Committed wherever the originals are committed</strong> — they are published
+                  assets the site serves, not a local cache. <span class="pill bad">fixed in r2</span>
+                </td>
+              </tr>
+              <tr>
+                <td>Filenames</td>
+                <td><strong>Mirror the original's stem</strong></td>
+                <td>
+                  <code>sunset-over-tokyo.webp</code> — clean, shareable. Costs a collision rule, a
+                  rename hook, and a short cache lifetime instead of an immutable one. Versioned URLs
+                  are <a href="#cache">deferred by decision</a>. <span class="pill info">settled in r3</span>
+                </td>
+              </tr>
+              <tr>
+                <td>Reader API</td>
+                <td><code>item.variant('thumb')</code></td>
+                <td>Per-component choice. Missing preset falls back to the original, so a component can never render a broken image.</td>
+              </tr>
+              <tr>
+                <td>Quality reporting</td>
+                <td><strong>Metric only, no side-by-side comparer</strong></td>
+                <td>A computed SSIM score per derivative, bucketed and charted. No image-diff UI to build.</td>
+              </tr>
+              <tr>
+                <td>Staleness</td>
+                <td><strong>Auto-regenerate, quietly</strong></td>
+                <td>Derivatives are always correct; the page reports what it's doing rather than asking permission.</td>
+              </tr>
+              <tr>
+                <td>Scope</td>
+                <td><strong>Still images now, video mapped for later</strong></td>
+                <td>
+                  <code>sharp</code> covers JPEG/PNG/TIFF/WebP. HEIC never appears — upload already
+                  converts it to JPEG before storage. GIF is <em>capable</em> but out of scope by
+                  choice; video and PDF are genuine capability limits. All three are recorded as
+                  "not compressible". <span class="pill bad">fixed in r2</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="model">
+        <h2>The model <span class="rule"></span></h2>
+
+        <p class="h3">A preset is a recipe. A class subscribes to recipes.</p>
+        <p>
+          The thing that nearly sank this design was asking "what quality is <em>this photo</em>?" —
+          because a photo in two classes has two answers. Turning it around fixes it: quality belongs
+          to the <strong>recipe</strong>, not the photo. A class doesn't set a quality; it declares
+          which recipes its members need. A photo in two classes needs both, so it gets both.
+        </p>
+
+        <div class="flow">
+          <div class="node">
+            <div class="nt">Presets</div>
+            <div class="nv">
+              <span class="a">web</span> &nbsp;webp q80<br />
+              <span class="a">thumb</span> webp q70 400w<br />
+              <span class="a">fine</span> &nbsp;webp q92
+            </div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <div class="nt">Subscriptions</div>
+            <div class="nv">
+              workspace → <span class="a">web</span><br />
+              class <span class="s">photos</span> → <span class="a">fine</span><br />
+              class <span class="s">gallery</span> → <span class="a">thumb</span>
+            </div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <div class="nt">Result for one blob</div>
+            <div class="nv">
+              <span class="c">sunset.jpg ∈ photos, gallery</span><br />
+              → web &nbsp;<span class="c">380 KB</span><br />
+              → fine <span class="c">1.2 MB</span><br />
+              → thumb <span class="c">28 KB</span>
+            </div>
+          </div>
+        </div>
+
+        <p>
+          The union rule has one more benefit worth stating plainly: <strong>the phase-2 ladder is
+          not a new feature.</strong> Responsive widths are just more presets with a <code>width</code>
+          set. The generator, the manifest shape, the staleness check, the reader lookup and the
+          savings maths are all written once, in phase 1, and phase 2 only adds rows to a config
+          object.
+        </p>
+
+        <div class="note">
+          <span class="tag">Deliberately deferred</span>
+          <p>
+            Phase 1 ships the preset <em>registry</em> but only the <strong>workspace default</strong>
+            subscription — no per-class subscribe UI, no <code>width</code>. That means the multi-class
+            union has nothing to unify yet, which is exactly why phase 1 can't get it wrong. Per-class
+            subscription and widths land together in phase 2, on a data model that already expects them.
+          </p>
+        </div>
+
+        <p class="h4">Rules the generator obeys</p>
+        <ul>
+          <li><strong>Originals are never touched.</strong> Not overwritten, not moved, not deleted. Every derivative is additive; deleting <code>media/derived/</code> entirely is always safe and always recoverable by a backfill.</li>
+          <li>
+            <strong>Orientation and colour are preserved explicitly.</strong>
+            <span class="pill bad">fixed in r2</span> <code>sharp</code> neither auto-rotates nor keeps
+            the ICC profile unless told, so every pipeline is
+            <code>sharp(src).rotate().withMetadata()</code> at minimum. This repo already has an
+            orientation discipline (<code>core/images.ts</code>, Item 13) precisely because phone
+            photos depend on the EXIF tag — a derivative that ignores it renders sideways. See
+            <a href="#quality">the quality section</a> for why the SSIM score cannot catch this.
+          </li>
+          <li><strong>A derivative bigger than its original is discarded.</strong> Already-optimised small PNGs and screenshots frequently grow under re-encode. The entry records <code>skipped: "larger"</code> <em>and</em> the current <code>recipe</code>, so it is not retried until the recipe actually changes.</li>
+          <li><strong>Non-images are recorded, not attempted.</strong> A PDF or a video gets <code>skipped: "unsupported"</code> — also stamped with the current recipe — so the Compression page can say "389 of 412 covered, 23 can't be" instead of looking incomplete.</li>
+          <li><strong>Every skip carries a recipe.</strong> <span class="pill bad">fixed in r2</span> Staleness is a recipe mismatch, so an entry with no recipe mismatches everything and would be retried on every single backfill forever — exactly what the skip is supposed to prevent.</li>
+          <li><strong>Generation never blocks a request.</strong> Upload responds as soon as the blob is registered; the derivative is queued behind it. A slow AVIF encode can't make the upload feel slow.</li>
+          <li><strong>Every ingestion path is hooked, not just upload.</strong> <span class="pill bad">fixed in r2</span> <code>registerBlob</code> has two callers — <code>api/files/upload</code> and <code>api/google-photos/import</code>. Wiring only the first leaves every imported photo uncompressed until someone runs a manual backfill.</li>
+        </ul>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="disk">
+        <h2>On disk <span class="rule"></span></h2>
+
+        <pre><code><span class="c"># classic workspace</span>
+&lt;root&gt;/media/
+├─ files/                     <span class="c"># originals — untouched, the source of truth</span>
+│  ├─ sunset-over-tokyo.jpg   <span class="c"># 4.2 MB</span>
+│  └─ kitchen-window.jpg      <span class="c"># HEIC was converted at upload</span>
+├─ <span class="a">derived/</span>                   <span class="c"># generated; committed alongside the originals</span>
+│  ├─ <span class="a">web/</span>
+│  │  ├─ sunset-over-tokyo.webp   <span class="c"># 380 KB</span>
+│  │  └─ kitchen-window.webp
+│  └─ <span class="a">thumb/</span>                <span class="c"># phase 2</span>
+│     └─ sunset-over-tokyo.webp   <span class="c"># 28 KB</span>
+└─ manifest.json              <span class="c"># records every derivative + its measurements</span></code></pre>
+
+        <p>
+          Names are clean and shareable, which is a deliberate choice with a known cost — see
+          <a href="#cache">Keeping caches honest</a>. Because two originals can share a stem
+          (<code>photo.jpg</code> and <code>photo.png</code> both want <code>photo.webp</code>), the
+          collision rule in <a href="#risks">Risks</a> applies.
+        </p>
+
+        <p class="h4">Static-assets mode</p>
+        <p>
+          In static-assets mode the blob dir is the published asset root and the reader synthesises
+          <code>${baseUrl}/${filename}</code>. Derivatives go <strong>inside</strong> that root as
+          <code>&lt;assetsDir&gt;/derived/&lt;preset&gt;/</code>, so <code>baseUrl</code> composes with no
+          extra config. A single <code>getDerivedDir(preset)</code> resolver hides the
+          classic-vs-static difference, exactly the way <code>getGlobalFilesDir()</code> already does.
+        </p>
+
+        <div class="note risk">
+          <span class="tag">Correction — r1 invented a risk that cannot occur</span>
+          <p>
+            Revision 1 claimed <code>manifest.reconcile()</code> would scan <code>derived/</code> and
+            mint phantom file ids for it, and shipped an acceptance criterion to guard against that.
+            <strong>Both were wrong.</strong> <code>reconcile()</code> scans nothing — it receives
+            <code>diskNames: string[]</code> (<code>manifest.ts:284</code>), and its only producer
+            <code>readGlobalBlobNames()</code> already filters <code>d.isFile()</code>
+            (<code>manifest.ts:332</code>). Independently, adoption defaults to
+            <code>!isStaticAssetsMode()</code> (<code>manifest.ts:288</code>) — so in the exact mode
+            that was flagged, nothing is auto-minted at all, deliberately and documented.
+          </p>
+          <p>
+            The r1 acceptance criterion "<code>reconcile()</code> ignores the <code>derived</code>
+            directory" tested a no-op and has been deleted. Nothing needs doing here.
+          </p>
+        </div>
+
+        <div class="note risk">
+          <span class="tag">Real risk r1 missed — the storage-location move leaves derivatives behind</span>
+          <p>
+            R1 claimed the Item 46 move "carries them for free". It does not.
+            <code>migrateBlobs</code> iterates a flat list of manifest <code>file_name</code>s and
+            copies <code>fromDir/name</code> → <code>toDir/name</code>
+            (<code>assetsMigrate.ts:215-300</code>); it never walks subdirectories, and derivatives
+            are not in that name set. After a classic ↔ static switch the manifest still asserts every
+            derivative exists while the new location is empty, so <strong>every
+            <code>variant()</code> URL 404s</strong> until a full backfill — silently, since the
+            originals still resolve.
+          </p>
+          <p>
+            Phase 1 must extend <code>migrateBlobs</code> to walk <code>derived/&lt;preset&gt;/</code>,
+            and include derivative bytes in its free-space preflight
+            (<code>assetsMigrate.ts:238-256</code>).
+          </p>
+        </div>
+
+        <p class="h4">Manifest entry</p>
+        <p>
+          Derivatives hang off the existing per-blob entry rather than living in a second file, so
+          one manifest read still answers everything the grid and the reader need.
+        </p>
+
+        <div class="note risk">
+          <span class="tag">This is not additive — an un-declared key is destroyed, not preserved</span>
+          <p>
+            <code>ManifestEntrySchema</code> is a bare <code>z.object</code>
+            (<code>manifest.ts:29</code>), so zod's default <code>strip</code> applies: any key not in
+            the schema is silently dropped on <code>.parse()</code>. Every mutator round-trips
+            <code>readManifest()</code> → <code>parse</code> → mutate → write
+            (<code>manifest.ts:57</code>), so a <code>derived</code> block would survive only until the
+            next <code>setClassMembership</code> / <code>renameFileId</code> /
+            <code>setEntryDimensions</code> / <code>reconcile</code> write, then vanish with no error.
+          </p>
+          <p>
+            The reader has the same hazard for a different reason: <code>parseManifest</code>
+            hand-whitelists fields (<code>reader/manifest.ts:83-90</code>), so it drops
+            <code>derived</code> too — which would break <code>baseUrl</code>-mode synthesis, since
+            that path reads the manifest rather than a glob.
+          </p>
+          <p>
+            <strong>Phase-1 work, not an implementation detail:</strong> extend
+            <code>ManifestEntrySchema</code>, extend <code>ManifestFileEntry</code> +
+            <code>parseManifest</code> on the reader side, and audit every manifest writer.
+            <span class="pill bad">fixed in r2</span>
+          </p>
+        </div>
+
+        <pre><code>{
+  <span class="s">"8f3a1c9d-…"</span>: {
+    <span class="k">"file_name"</span>: <span class="s">"sunset-over-tokyo.jpg"</span>,
+    <span class="k">"classes"</span>: [<span class="s">"photos"</span>, <span class="s">"gallery"</span>],
+    <span class="k">"size"</span>: 4213880, <span class="k">"width"</span>: 4032, <span class="k">"height"</span>: 3024,
+    <span class="k">"derived"</span>: {
+      <span class="s">"web"</span>: {
+        <span class="k">"file_name"</span>: <span class="s">"sunset-over-tokyo.webp"</span>,
+        <span class="k">"size"</span>: 380114, <span class="k">"width"</span>: 4032, <span class="k">"height"</span>: 3024,
+        <span class="k">"ssim"</span>: 0.987,
+        <span class="k">"recipe"</span>: <span class="s">"webp:q80"</span>,          <span class="c">// ← staleness key</span>
+        <span class="k">"source_size"</span>: 4213880,       <span class="c">// ← detects a re-uploaded original</span>
+        <span class="k">"generated_at"</span>: <span class="s">"2026-08-18T…"</span>
+      }
+    }
+  },
+  <span class="s">"b21e…"</span>: {
+    <span class="k">"file_name"</span>: <span class="s">"contract.pdf"</span>,
+    <span class="k">"derived"</span>: { <span class="s">"web"</span>: { <span class="k">"skipped"</span>: <span class="s">"unsupported"</span> } }
+  }
+}</code></pre>
+
+        <p>
+          <strong>Staleness is a comparison, not a timestamp race.</strong> A derivative is stale when
+          its stored <code>recipe</code> differs from the preset's current recipe string, or its
+          <code>source_size</code> differs from the original's current size.
+        </p>
+
+        <div class="note risk">
+          <span class="tag">…but <code>entry.size</code> is not the reliable field r1 assumed</span>
+          <p>
+            R1 called both halves "cheap fields already in memory, so staleness costs nothing".
+            The recipe half is true. The size half is not:
+          </p>
+          <ul class="small">
+            <li><code>size</code> is written <strong>only at mint</strong> (<code>manifest.ts:97</code>), and <code>mintFileId</code> returns early on an existing name <em>without updating it</em> (<code>manifest.ts:93</code>) — so an overwrite re-upload leaves the stale size, and the re-upload detector never fires.</li>
+            <li><code>reconcile()</code>'s adoption path creates entries with <strong>no <code>size</code> at all</strong> (<code>manifest.ts:300</code>), and nothing ever backfills it — <code>backfillDimensions</code> does width/height only (<code>classRepo.ts:884</code>). Every hand-dropped blob has <code>size: undefined</code> permanently. This is already visible today: <code>file:size</code> renders empty for those rows.</li>
+          </ul>
+          <p>
+            Consequence: the headline savings total <em>cannot be computed</em> for any
+            reconcile-adopted blob. <strong>Phase 1 must add a size backfill/refresh to
+            <code>reconcile</code></strong> — which also fixes an existing display bug — and until it
+            lands, the staleness check is an fs <code>stat</code>, not a free in-memory compare.
+            <span class="pill bad">fixed in r2</span>
+          </p>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="page">
+        <h2>The Compression page <span class="rule"></span></h2>
+        <p>
+          A route at <code>/compression</code>, reachable from the dashboard and the ⌘K palette. It
+          answers three questions in descending order of how often you'll ask them: <em>how much am I
+          saving</em>, <em>is anything degraded</em>, and <em>is anything not done yet</em>.
+        </p>
+
+        <div class="mock">
+          <div class="bar"><span class="lights"><i></i><i></i><i></i></span> media-manager — /compression</div>
+          <div class="body">
+            <div class="mhead">
+              <div>
+                <div class="mtitle">Compression</div>
+                <div class="msub">Home › Compression</div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <span class="btn ghost">Presets…</span>
+                <span class="btn primary">Backfill 23 files</span>
+              </div>
+            </div>
+
+            <div class="statrow">
+              <div class="stat">
+                <div class="lbl">Saved</div>
+                <div class="val good">4.42 GB</div>
+                <div class="sub">4.90 GB → 480 MB · −90.2%</div>
+              </div>
+              <div class="stat">
+                <div class="lbl">Covered</div>
+                <div class="val">389<span style="color:var(--muted);font-size:15px">/412</span></div>
+                <div class="sub">23 can't be compressed</div>
+              </div>
+              <div class="stat">
+                <div class="lbl">Quality</div>
+                <div class="val">0.984</div>
+                <div class="sub">median SSIM · 3 flagged</div>
+              </div>
+              <div class="stat">
+                <div class="lbl">Stale</div>
+                <div class="val">0</div>
+                <div class="sub">regenerating automatically</div>
+              </div>
+            </div>
+
+            <div style="height:22px"></div>
+
+            <div class="cols">
+              <div>
+                <div class="h4" style="margin-top:0">Quality distribution</div>
+                <div class="qbars">
+                  <div class="qb" style="height:34%"></div>
+                  <div class="qb" style="height:76%"></div>
+                  <div class="qb s3" style="height:100%"></div>
+                  <div class="qb s2" style="height:22%"></div>
+                  <div class="qb s1" style="height:6%"></div>
+                </div>
+                <div class="qlabels">
+                  <span>≥.995<br />identical</span>
+                  <span>.99<br />imperceptible</span>
+                  <span>.97<br />excellent</span>
+                  <span>.94<br />slight</span>
+                  <span>&lt;.94<br />visible</span>
+                </div>
+              </div>
+              <div>
+                <div class="h4" style="margin-top:0">By class</div>
+                <div style="font-size:12.5px">
+                  <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-variant-numeric:tabular-nums"><span>photos</span><span class="muted">3.11 GB saved</span></div>
+                  <span class="redbar" style="margin:6px 0 12px"><i style="width:93%"></i></span>
+                  <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-variant-numeric:tabular-nums"><span>scans</span><span class="muted">1.02 GB saved</span></div>
+                  <span class="redbar" style="margin:6px 0 12px"><i style="width:71%"></i></span>
+                  <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-variant-numeric:tabular-nums"><span>screenshots</span><span class="muted">288 MB saved</span></div>
+                  <span class="redbar" style="margin:6px 0 12px"><i style="width:44%"></i></span>
+                  <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-variant-numeric:tabular-nums"><span class="muted">unclassified</span><span class="muted">0 B</span></div>
+                  <span class="redbar" style="margin:6px 0 0"><i style="width:0%"></i></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="h4">Needs a look <span class="pill bad" style="margin-left:6px">3 flagged</span></div>
+            <div class="listrow" style="border-bottom:1px solid var(--line)">
+              <div class="fname muted" style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase">File</div>
+              <div class="n" style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase">Original</div>
+              <div class="n" style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase">web</div>
+              <div class="n" style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase">SSIM</div>
+            </div>
+            <div class="listrow">
+              <div class="fname">gradient-poster-final.png</div>
+              <div class="n">2.1 MB</div>
+              <div class="n">1.9 MB</div>
+              <div><span class="pill bad">0.912</span></div>
+            </div>
+            <div class="listrow">
+              <div class="fname">scan_042_receipts.jpg</div>
+              <div class="n">840 KB</div>
+              <div class="n">96 KB</div>
+              <div><span class="pill bad">0.928</span></div>
+            </div>
+            <div class="listrow">
+              <div class="fname">IMG_9931_fireworks.jpg</div>
+              <div class="n">5.4 MB</div>
+              <div class="n">301 KB</div>
+              <div><span class="pill warn">0.939</span></div>
+            </div>
+
+            <div class="h4">Not compressible <span class="pill neutral" style="margin-left:6px">23 files</span></div>
+            <p class="small muted" style="margin-top:0">
+              14 videos · 5 PDFs · 3 animated GIFs · 1 grew under re-encode
+              (<code>icon-sprite.png</code>, derivative discarded).
+            </p>
+          </div>
+          <div class="caption">
+            The headline is bytes, because that's what you asked for first. Quality sits beside it so
+            a great savings number can never be read without its cost.
+          </div>
+        </div>
+
+        <p class="h4">While a backfill is running</p>
+        <p>
+          The primary button becomes live progress in place. Because generation is queued rather than
+          blocking, you can navigate away and come back — the job's state lives on the server, not in
+          the page.
+        </p>
+
+        <div class="mock">
+          <div class="body" style="padding:16px 20px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px">
+              <span style="font-weight:600">Compressing 412 files</span>
+              <span class="muted" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12px">247 / 412 · ~1m 20s left</span>
+            </div>
+            <div class="progress"><i style="width:60%"></i></div>
+            <div style="display:flex;justify-content:space-between;margin-top:10px;align-items:center">
+              <span class="muted" style="font-family:var(--mono);font-size:11.5px">saved so far <b style="color:var(--good)">2.71 GB</b> · 4 skipped · 1 flagged</span>
+              <span class="btn ghost" style="padding:5px 10px">Cancel</span>
+            </div>
+          </div>
+          <div class="caption">Cancel stops after the current file. Everything already generated stays — a backfill is resumable by definition, since it only ever visits files whose derivative is missing or stale.</div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="settings">
+        <h2>Presets &amp; class subscriptions <span class="rule"></span></h2>
+
+        <p>
+          Presets are workspace-level, edited in a dialog off the Compression page (and mirrored as a
+          tab in global Settings next to Storage location, since that's where you'd look for it).
+        </p>
+
+        <div class="mock">
+          <div class="bar"><span class="lights"><i></i><i></i><i></i></span> Presets</div>
+          <div class="body">
+            <div class="field" style="padding-top:0">
+              <div>
+                <div class="fl">Compress new uploads automatically</div>
+                <div class="fh">Uploads finish immediately; the derivative is generated in the background.</div>
+              </div>
+              <div class="toggle on"></div>
+            </div>
+            <div class="field">
+              <div>
+                <div class="fl">Applied to every image</div>
+                <div class="fh">Presets every blob gets, whatever it belongs to.</div>
+              </div>
+              <div class="sel">web ▾</div>
+            </div>
+
+            <div class="h4">Presets</div>
+            <div class="cols" style="margin-top:0">
+              <div class="preset-card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span class="pname">web</span>
+                  <span class="pill ok">default</span>
+                </div>
+                <div style="display:flex;gap:7px;margin-top:11px;align-items:center;flex-wrap:wrap">
+                  <span class="sel">WebP ▾</span>
+                  <span class="inp">q 80</span>
+                  <span class="inp" style="color:var(--muted)">width —</span>
+                </div>
+                <div class="pmeta">389 files · 4.90 GB → 480 MB · median SSIM 0.987</div>
+                <span class="redbar g" style="margin-top:9px"><i style="width:90%"></i></span>
+              </div>
+              <div class="preset-card" style="opacity:.62">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span class="pname">thumb</span>
+                  <span class="pill neutral">phase 2</span>
+                </div>
+                <div style="display:flex;gap:7px;margin-top:11px;align-items:center;flex-wrap:wrap">
+                  <span class="sel">WebP ▾</span>
+                  <span class="inp">q 70</span>
+                  <span class="inp">width 400</span>
+                </div>
+                <div class="pmeta">not yet generated</div>
+                <span class="redbar" style="margin-top:9px"><i style="width:0%"></i></span>
+              </div>
+            </div>
+            <div style="margin-top:14px"><span class="btn">+ New preset</span></div>
+
+            <div class="note" style="margin-bottom:0">
+              <span class="tag">What changing a preset does</span>
+              <p>
+                Editing quality from 80 to 70 rewrites the recipe string, which marks all 389
+                derivatives stale, which the background worker picks up. The page says so, then shows
+                progress. You are never asked to confirm a regeneration — originals are never at risk,
+                so there is nothing to confirm.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <p class="h4">Class subscription — phase 2</p>
+        <p>
+          Lands as a section in the existing <code>EntitySettingsDialog</code> General tab, so it
+          inherits the pattern already used for title-by, group-by and verbose fields rather than
+          introducing a new place to look.
+        </p>
+
+        <div class="mock">
+          <div class="bar"><span class="lights"><i></i><i></i><i></i></span> Class settings — photos · General</div>
+          <div class="body">
+            <div class="h4" style="margin-top:0">Compression presets</div>
+            <p class="small muted" style="margin-top:0">
+              Members of this class get these on top of the workspace default. A file in several
+              classes gets every preset any of them asks for.
+            </p>
+            <div class="checkline"><span class="box on"></span> <span><code>web</code> <span class="muted">— WebP q80 · applied to everything</span></span></div>
+            <div class="checkline"><span class="box on"></span> <span><code>fine</code> <span class="muted">— WebP q92</span></span></div>
+            <div class="checkline"><span class="box"></span> <span><code>thumb</code> <span class="muted">— WebP q70 · 400w</span></span></div>
+            <p class="small muted" style="margin-bottom:0">
+              412 members · adds an estimated <b style="color:var(--ink)">1.4 GB</b> of derivatives.
+            </p>
+          </div>
+          <div class="caption">
+            The <code>web</code> row is checked and disabled — it's the workspace default, shown for
+            completeness so the union is legible rather than implicit.
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="perfile">
+        <h2>Per-file surfacing <span class="rule"></span></h2>
+        <p>
+          Aggregate numbers tell you the system works; per-file numbers tell you which file to fix.
+          Two touchpoints, both reusing surfaces that already exist.
+        </p>
+
+        <div class="cols">
+          <div class="mock" style="margin:0">
+            <div class="bar"><span class="lights"><i></i><i></i><i></i></span> File editor panel</div>
+            <div class="body">
+              <div style="font-family:var(--mono);font-size:12px;margin-bottom:12px">sunset-over-tokyo.jpg</div>
+              <div class="h4" style="margin-top:0">Compression</div>
+              <div class="listrow" style="grid-template-columns:1fr auto auto">
+                <span class="fname">web</span>
+                <span class="n">4.2 MB → 380 KB</span>
+                <span><span class="pill ok">0.987</span></span>
+              </div>
+              <div class="listrow" style="grid-template-columns:1fr auto auto">
+                <span class="fname">fine</span>
+                <span class="n">4.2 MB → 1.2 MB</span>
+                <span><span class="pill ok">0.996</span></span>
+              </div>
+              <p class="small muted" style="margin-bottom:0">
+                Saving 3.8 MB · imperceptible at q80.
+              </p>
+            </div>
+          </div>
+
+          <div class="mock" style="margin:0">
+            <div class="bar"><span class="lights"><i></i><i></i><i></i></span> Files grid — Show ▾</div>
+            <div class="body">
+              <div class="tiles" style="grid-template-columns:repeat(2,1fr)">
+                <div class="tile">
+                  <div class="thumb"></div>
+                  <div class="tbody">
+                    <div class="tname">sunset-over-tokyo</div>
+                    <dl>
+                      <div><dt>size</dt><dd>4.2 MB</dd></div>
+                      <div><dt>saved</dt><dd style="color:var(--good)">−91%</dd></div>
+                      <div><dt>quality</dt><dd>0.987</dd></div>
+                    </dl>
+                  </div>
+                </div>
+                <div class="tile">
+                  <div class="thumb"></div>
+                  <div class="tbody">
+                    <div class="tname">gradient-poster-final</div>
+                    <dl>
+                      <div><dt>size</dt><dd>2.1 MB</dd></div>
+                      <div><dt>saved</dt><dd style="color:var(--bad)">−10%</dd></div>
+                      <div><dt>quality</dt><dd style="color:var(--bad)">0.912</dd></div>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+              <p class="small muted" style="margin-bottom:0">
+                Three new <code>file:*</code> items in the existing Show menu:
+                <code>file:saved</code>, <code>file:quality</code>, <code>file:presets</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <p>
+          The <code>file:*</code> mechanism is real and is the right hook — those fields are resolved
+          client-side in <code>files/+page.svelte:264-316</code>, exactly as r1 described. But
+          <strong>r1's "nearly free" was wrong about where the data comes from</strong>: the grid does
+          not read manifest entries. It consumes <code>FileItem</code> DTOs projected by
+          <code>fileItemFromEntry</code>, which copies an explicit 8-field whitelist
+          (<code>classRepo.ts:905</code>) and is validated by <code>FileItemSchema</code>. So
+          <code>derived</code> does <em>not</em> ride along — it has to be threaded through both.
+          <span class="pill bad">fixed in r2</span>
+        </p>
+        <p>
+          Real cost: <code>FileItemSchema</code> + <code>fileItemFromEntry</code> +
+          <code>intrinsicValue</code> + <code>FILE_INFO_OPTIONS</code> for the fields, and three
+          coordinated places for the sort keys (<code>FILE_SORT_KEYS</code>,
+          <code>fileBuiltinSortValue</code>, and the client <code>sortOptions</code>). Small and
+          mechanical — but a half-day, not a freebie.
+        </p>
+        <div class="note">
+          <span class="tag">Minor: the Show menu is capped at 6</span>
+          <p>
+            <code>MAX_VERBOSE_FIELDS = 6</code> (<code>core/recordDisplay.ts:133</code>). Adding three
+            File-info options means an All-Files view can no longer select every one of them at once.
+            Acceptable, but it should be a deliberate choice rather than a surprise — if it grates,
+            fold <code>saved</code> and <code>quality</code> into a single combined item.
+          </p>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="quality">
+        <h2>What "noticeable" means <span class="rule"></span></h2>
+
+        <p>
+          You wanted a number, not a slider you have to stare through. The number is
+          <strong>SSIM</strong> — structural similarity between the original and its derivative,
+          computed at generation time and stored on the manifest entry. It correlates with human
+          judgement far better than PSNR and, crucially, it needs <em>no new dependency</em>: it's
+          about sixty lines of arithmetic over two raw greyscale buffers that <code>sharp</code>
+          already produces.
+        </p>
+
+        <p class="h4">How it's computed</p>
+        <ol>
+          <li>Decode both images to raw greyscale at a matched size — longest edge 512 px — via <code>sharp(…).greyscale().raw()</code>. Verified working on the installed sharp 0.34.2 / libvips 8.16.1: returns a 1-channel <code>uchar</code> buffer.</li>
+          <li>Slide an 8×8 uniform window computing per-window means, variances and covariance; average the windows.</li>
+          <li>Store the result to three decimals. Cost is <strong>tens of milliseconds</strong>, against an encode measured in hundreds — comfortably worth it, but r1's "a few milliseconds" was padding. <span class="pill bad">fixed in r2</span></li>
+        </ol>
+
+        <p class="small muted">
+          Two simplifications worth naming rather than implying textbook SSIM: this uses a uniform 8×8
+          window where the reference implementation uses an 11×11 Gaussian, and it compares luma only —
+          which means it systematically <em>over-scores</em> exactly the chroma-subsampling artifacts
+          WebP introduces at q80. Both are acceptable for ranking files against each other, which is
+          all the flagged list needs; neither would be acceptable for publishing an absolute quality
+          claim.
+        </p>
+
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>SSIM</th><th>Bucket</th><th>Read it as</th></tr></thead>
+            <tbody>
+              <tr><td class="num">≥ 0.995</td><td><span class="pill ok">Identical</span></td><td>Indistinguishable at any zoom. Free bytes.</td></tr>
+              <tr><td class="num">0.99 – 0.995</td><td><span class="pill ok">Imperceptible</span></td><td>You would not find the difference if you were hunting for it.</td></tr>
+              <tr><td class="num">0.97 – 0.99</td><td><span class="pill info">Excellent</span></td><td><strong>Where a typical q80 photo lands</strong> — the workspace median in the mock is 0.984. Fine for grids and full-bleed alike.</td></tr>
+              <tr><td class="num">0.94 – 0.97</td><td><span class="pill warn">Slight</span></td><td>Visible on flat gradients and skies if you look for it.</td></tr>
+              <tr><td class="num">&lt; 0.94</td><td><span class="pill bad">Visible</span></td><td><strong>Flagged.</strong> Usually means the source was already compressed, or it's line art / a screenshot that wants PNG, not WebP.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note">
+          <span class="tag">Honest caveat, stated in the UI</span>
+          <p>
+            For a resized preset the two images aren't the same size, so the original is downscaled to
+            the derivative's dimensions before comparison. The score therefore measures <em>codec
+            loss</em>, not the resize — a 400 px thumbnail scoring 0.96 is not "4% worse than the
+            original photo", it's "a good 400 px rendering". The Compression page labels resized
+            presets' scores accordingly rather than letting them be compared against full-size ones.
+          </p>
+        </div>
+
+        <div class="note risk">
+          <span class="tag">What this metric is blind to — and it's the likeliest real defect</span>
+          <p>
+            SSIM compares the two buffers <em>as decoded</em>. If the derivative loses its EXIF
+            orientation tag and renders 90° rotated, both buffers are still compared pre-rotation, so
+            the score stays ~0.99 — a perfect grade on a visibly broken image. Colour-profile loss
+            (P3 → untagged sRGB) is likewise invisible to a luma-only comparison.
+          </p>
+          <p>
+            This is why orientation and ICC preservation is a <em>generator rule</em>
+            (<a href="#model">see the model</a>) rather than something the metric is trusted to catch.
+            The safety net does not cover the most probable failure, and pretending otherwise was the
+            most dangerous thing in r1. <span class="pill bad">fixed in r2</span>
+          </p>
+        </div>
+
+        <p>
+          A low score is <strong>information, not an error</strong>. Nothing is blocked, no derivative
+          is withheld. The flagged list exists so that once, after the first backfill, you can look at
+          three files instead of four hundred and decide whether any of them deserve a per-file
+          exception.
+        </p>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="cache">
+        <h2>Keeping caches honest <span class="rule"></span></h2>
+
+        <p class="small muted" style="margin-top:14px">
+          <span class="pill bad">new in r2</span>
+          <span class="pill info">decided in r3</span> &nbsp;R1 missed this entirely, in the one mode
+          the feature exists to serve.
+        </p>
+
+        <p>
+          Browsers and CDNs keep a copy of every image, keyed by its web address. The plan regenerates
+          derivatives quietly and <strong>in place, under the same filename</strong> — so a quality
+          change produces new bytes at an address the cache already thinks it knows. Visitors keep
+          seeing the old image. In bundled-glob mode Vite hashes every asset URL and this never
+          arises; in <code>baseUrl</code> mode — how nicb.at serves — nothing does that for us.
+        </p>
+
+        <div class="cols">
+          <div class="card">
+            <div class="h4" style="margin-top:0">Shipping — clean names, short lifetime</div>
+            <pre style="box-shadow:none;margin:0"><code>/derived/web/sunset.webp
+
+<span class="a">Cache-Control: public, max-age=3600</span>
+
+<span class="s">Clean, shareable, and a change
+reaches everyone within an hour.</span></code></pre>
+          </div>
+          <div class="card" style="opacity:.72">
+            <div class="h4" style="margin-top:0">Deferred — versioned URLs</div>
+            <pre style="box-shadow:none;margin:0"><code>/derived/web<span class="a">.a1b2c3</span>/sunset.webp
+
+<span class="a">Cache-Control: … immutable</span>
+
+<span class="c">Instant invalidation, year-long
+caching, uglier address.</span></code></pre>
+          </div>
+        </div>
+
+        <p class="h4">The decision</p>
+        <p>
+          <strong>Phase 1 ships clean filenames with a one-hour cache lifetime.</strong> The cost is
+          that a preset change takes up to an hour to reach every visitor, and that repeat visitors
+          re-check images more often than they strictly need to. Both are acceptable for a personal
+          site that changes its compression settings roughly never.
+        </p>
+
+        <div class="note">
+          <span class="tag">Deferred — revisit if image links ever get shared, or the site feels slow</span>
+          <p>
+            <strong>The concern, as raised:</strong> hashed filenames make image URLs unshareable —
+            someone copying a link to an image on the site gets an opaque, expiring address.
+          </p>
+          <p>
+            <strong>Why it was judged acceptable to defer:</strong> only <em>derivatives</em> would
+            carry a hash, and derivatives are the small grid thumbnails. The full-size image — the one
+            a visitor clicks into, right-clicks, and shares — is the untouched original at
+            <code>/media/sunset-over-tokyo.jpg</code>, and page URLs never contain an image filename
+            at all. So the ugly address would only ever surface if someone deliberately copied the link
+            of a grid thumbnail, which is both rare and the wrong image to share. Not worth paying for
+            up front.
+          </p>
+          <p>
+            <strong>The one case that would change the answer:</strong> <code>og:image</code>. If a
+            social preview ever points at a derivative rather than an original, a versioned URL would
+            404 for re-scrapes after a sweep. Point <code>og:image</code> at an original and this stays
+            a non-issue.
+          </p>
+          <p>
+            <strong>Preferred shape when it is picked up:</strong> version the
+            <em>directory</em> (<code>/derived/web.a1b2c3/sunset.webp</code>) rather than the filename.
+            Same invalidation, but the saved file keeps a clean name — and since a preset change
+            invalidates every file in that preset at once, per-preset is the correct granularity;
+            per-file hashing is over-granular. Rejected alternative: a <code>?v=</code> query string,
+            because some CDN configurations drop query strings when computing a cache key, which
+            reintroduces the bug invisibly.
+          </p>
+          <p>
+            <strong>Why deferring is cheap:</strong> the plan already forbids reconstructing derivative
+            filenames — every lookup reads <code>file_name</code> from the manifest. That single
+            invariant makes the naming scheme a swappable detail, so adopting versioned URLs later is a
+            regenerate-and-sweep (one button on the Compression page), not a migration.
+          </p>
+        </div>
+
+        <div class="note risk">
+          <span class="tag">Verify before phase 1 lands</span>
+          <p>
+            This decision assumes cache headers can actually be set on these assets on Vercel —
+            normally a few lines in <code>vercel.json</code>. <strong>If that turns out to be awkward,
+            the deferral is void</strong> and versioned URLs move back into phase 1, because clean
+            names with an uncontrolled cache lifetime is the one combination that is genuinely broken:
+            a changed image that never reaches anyone.
+          </p>
+        </div>
+
+        <p class="h4">Sweeping either way</p>
+        <p>
+          Regeneration can leave unreferenced files behind (a preset deleted, a source removed, or —
+          later — a superseded version). A <strong>sweep</strong> deletes anything under
+          <code>derived/&lt;preset&gt;/</code> the manifest no longer references, run after a backfill
+          and available as a manual action. In classic mode it can run automatically; in static-assets
+          mode it should wait for the next full export, since a deployed site may still reference the
+          old file.
+        </p>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="reader">
+        <h2>Reader API <span class="rule"></span></h2>
+
+        <p>
+          Exactly the nicb.at case you described: compressed thumbnails in the grid, the untouched
+          original when someone clicks through.
+        </p>
+
+        <pre><code><span class="c">// grid — small, fast, compressed.</span>
+<span class="c">// note the dims come from the VARIANT, not the original: item.width would be</span>
+<span class="c">// 4032 on a 400px thumbnail, which is wrong by construction. (fixed in r2)</span>
+{@const t = item.<span class="a">variantInfo</span>(<span class="s">'thumb'</span>)}
+&lt;img src={t?.src ?? item.src} width={t?.width ?? item.width} height={t?.height ?? item.height} /&gt;
+
+<span class="c">// lightbox — the real thing</span>
+&lt;img src={item.<span class="a">src</span>} /&gt;
+
+<span class="c">// phase 2 — let the browser choose</span>
+&lt;img srcset={item.<span class="a">srcset</span>()} sizes=<span class="s">"(max-width: 700px) 100vw, 33vw"</span> src={item.src} /&gt;</code></pre>
+
+        <p class="h4">Resolution order</p>
+        <ol>
+          <li>The named preset for this item, if it was generated.</li>
+          <li><em>Nothing else.</em> Fall straight through to <code>item.src</code>.</li>
+        </ol>
+        <p>
+          There is deliberately no "nearest preset" fallback. A component asking for
+          <code>'thumb'</code> and silently receiving a 4 MB original is a bug you'd never see in
+          development and would only discover in your bandwidth bill; falling back to the original is
+          also that, but it is at least the <em>documented</em> behaviour and it can never render
+          broken. <code>item.variantInfo('thumb')</code> returns <code>null</code> when the preset is
+          absent, so a host that wants to be strict can be.
+        </p>
+
+        <p class="h4">Host wiring</p>
+        <pre><code>const mm = MediaManager.load({
+  data:    import.meta.glob(<span class="s">'$assets/media_manager/**/*.json'</span>, { eager: <span class="k">true</span>, import: <span class="s">'default'</span> }),
+  files:   import.meta.glob(<span class="s">'$assets/media_manager/media/files/*'</span>, { eager: <span class="k">true</span>, query: <span class="s">'?url'</span>, import: <span class="s">'default'</span> }),
+  <span class="a">derived</span>: import.meta.glob(<span class="s">'$assets/media_manager/media/derived/*/*'</span>, { eager: <span class="k">true</span>, query: <span class="s">'?url'</span>, import: <span class="s">'default'</span> })
+});</code></pre>
+        <p>
+          The preset name comes from the glob key's directory segment, so no extra config is needed
+          and adding a preset needs no host change. In <code>baseUrl</code> mode the reader
+          synthesises <code>${baseUrl}/derived/${preset}/${file_name}</code> from the manifest, matching
+          how <code>src</code> is already synthesised today. The <code>derived</code> map is optional —
+          a host that omits it gets originals everywhere, which is exactly the pre-compression
+          behaviour, so <strong>this is a non-breaking reader change</strong>
+          (<code>WorkspaceGlobs.posts</code> is the existing precedent for an optional third map).
+        </p>
+
+        <div class="note risk">
+          <span class="tag">The derived map must be its own index — sharing one would break originals</span>
+          <p>
+            <code>assetIndex</code> is a single flat map keyed on <strong>lowercased bare
+            basename</strong>, and <code>baseUrl</code> synthesis fires only when
+            <code>assetIndex.size === 0</code> (<code>reader/media-manager.ts:144-153</code>). Folding
+            derivatives into that map has two independent failure modes: it makes the index non-empty,
+            which <em>silently disables baseUrl synthesis for the originals</em> — every
+            <code>item.src</code> goes null and every file reports <code>missing: true</code> — and
+            bare-basename keying would collide <code>derived/web/x.webp</code> with
+            <code>derived/thumb/x.webp</code>.
+          </p>
+          <p>
+            So the derived index is a <strong>separate, preset-keyed map</strong>, not a reuse of the
+            existing one. R1's directory-segment rule was right about the collision but silent about
+            the <code>size === 0</code> gate, which is the more dangerous of the two.
+            <span class="pill bad">fixed in r2</span>
+          </p>
+        </div>
+
+        <p class="small muted">
+          Scope note: "cleanly addable" is accurate but not free — <code>MediaItem</code> has an
+          all-<code>readonly</code> fixed constructor and is built at two sites, and
+          <code>WorkspaceGlobs</code> / <code>ParsedWorkspace</code> / <code>ReaderContext</code> each
+          need the new optional map. Roughly six touchpoints across three files.
+        </p>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="phases">
+        <h2>Phases <span class="rule"></span></h2>
+
+        <div class="phase">
+          <div class="pn">Phase 1<br />The twin</div>
+          <div>
+            <h3>One derivative per image, measured and reported</h3>
+            <p class="small">
+              Adopt <code>sharp</code>. Preset registry in <code>media/settings.json</code> with a
+              workspace default only — no per-class subscription, no widths, so there is no union to
+              resolve yet. Auto-on-upload, backfill job, quiet stale regeneration, SSIM scoring, the
+              Compression page, and <code>item.variant()</code> in the reader.
+            </p>
+            <p class="h4" style="margin-top:14px">Done when</p>
+            <ul class="small">
+              <li><code>ManifestEntrySchema</code> and the reader's <code>parseManifest</code> both declare <code>derived</code>, and a membership write followed by a re-read <strong>preserves it</strong> (the zod-strip regression test).</li>
+              <li><code>reconcile()</code> records/refreshes <code>size</code> for adopted and re-uploaded blobs — <code>file:size</code> stops rendering empty for hand-dropped files.</li>
+              <li><code>media/derived/&lt;preset&gt;/</code> is populated for every compressible blob; originals byte-identical.</li>
+              <li>Two originals sharing a stem (<code>photo.jpg</code> + <code>photo.png</code>) produce two distinct derivative filenames, both resolvable.</li>
+              <li>Derivatives are served with an explicit, verified cache lifetime — confirmed reachable on Vercel <em>before</em> this phase is considered done.</li>
+              <li>A sweep removes derivatives the manifest no longer references, and never removes one it does.</li>
+              <li>A derivative of a rotated phone photo renders <strong>the same way up</strong> as its original, and retains its ICC profile.</li>
+              <li>Entries carry <code>size</code>, <code>ssim</code>, <code>recipe</code>, <code>source_size</code>; skipped entries carry <code>skipped</code> <em>and</em> <code>recipe</code>, and are not retried on a second backfill.</li>
+              <li>Uploading a JPEG produces its derivative without delaying the upload response. <strong>So does a Google Photos import.</strong></li>
+              <li>Changing the quality setting marks derivatives stale and regenerates them without a prompt.</li>
+              <li>Renaming a blob renames its derivatives; deleting a blob deletes them; deleting <code>media/derived/</code> and running a backfill reproduces <strong>byte-identical derivatives with equal <code>size</code>/<code>ssim</code>/<code>recipe</code></strong> (not "the exact same state" — <code>generated_at</code> necessarily differs).</li>
+              <li>Switching storage location moves derivatives too, and the free-space preflight counts their bytes.</li>
+              <li>A backfill of 400+ files does not cause request failures from manifest-lock contention.</li>
+              <li><code>/compression</code> shows saved bytes, coverage, the SSIM histogram, per-class breakdown, and the flagged list.</li>
+              <li>A host passing a <code>derived</code> glob gets compressed URLs from <code>item.variant()</code>; a host that doesn't is unaffected, <strong>including in <code>baseUrl</code> mode</strong>.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="pn">Phase 2<br />The ladder</div>
+          <div>
+            <h3>Widths, class subscriptions, srcset</h3>
+            <p class="small">
+              Add <code>width</code> to the preset shape and per-class subscription to
+              <code>EntitySettingsDialog</code> — the union rule goes live here. Add
+              <code>item.srcset()</code>, the per-file Compression section, and the
+              <code>file:saved</code> / <code>file:quality</code> verbose fields plus their sort keys.
+            </p>
+            <p class="h4" style="margin-top:14px">Done when</p>
+            <ul class="small">
+              <li>A blob in two classes with different subscriptions has one derivative per distinct preset, and removing it from one class doesn't delete a derivative the other still wants.</li>
+              <li>A width-bearing preset produces correctly-sized output with aspect ratio preserved and its SSIM computed against a matched-size original.</li>
+              <li><code>item.srcset()</code> emits every width-bearing preset with correct <code>w</code> descriptors, and <code>variantInfo()</code> returns the <em>derivative's</em> dimensions, not the original's.</li>
+              <li><code>file:saved</code>, <code>file:quality</code> and <code>file:presets</code> appear in the Show menu and are usable as sort keys.</li>
+              <li>Deleting a preset removes its directory and its manifest entries, and nothing else.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="pn">Phase 3<br />Motion</div>
+          <div>
+            <h3>Video, if it ever earns its place</h3>
+            <p class="small">
+              Not scheduled. Recorded here only so the phase-1 data model doesn't assume image-only:
+              <code>recipe</code> is an opaque string and <code>derived</code> is a preset-keyed map,
+              both of which describe an <code>ffmpeg</code> output as happily as a
+              <code>sharp</code> one. The real cost of this phase is the dependency and the encode
+              queue, not the schema — which is the point of writing it down now and building none of it.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════ -->
+      <section id="risks">
+        <h2>Risks &amp; calls made for you <span class="rule"></span></h2>
+
+        <div class="note">
+          <span class="tag">Stem-mirrored filenames — two holes, both closed</span>
+          <p>
+            <strong>Collision.</strong> <code>photo.jpg</code> and <code>photo.png</code> both want
+            <code>photo.webp</code>. On generation, if the target stem is already taken within that
+            preset directory by a <em>different</em> file id, append a short id suffix
+            (<code>photo-8f3a1c.webp</code>). The resulting name is stored in the manifest, so lookup
+            is always a manifest read and never a reconstructed string.
+            <span class="pill info">back in r3</span> — r2 deleted this rule on the grounds that
+            content hashing made collisions impossible; with hashing
+            <a href="#cache">deferred</a>, the rule is needed again.
+          </p>
+          <p>
+            <strong>Rename still needs a hook.</strong> <code>renameBlobById</code>
+            (<code>classRepo.ts:1245</code>) is genuinely O(1) — disk rename plus one
+            <code>manifestRenameFileId</code> — and adding one rename per preset keeps it a small
+            constant. Verified. Note its rollback path (<code>classRepo.ts:1261</code>) gains more
+            partial-failure states, so the derivative renames should happen <em>after</em> the
+            original's rename succeeds, and a failure there should be logged rather than rolled back:
+            a stale derivative filename is harmless (the manifest still points at it), a half-rolled-back
+            rename is not.
+          </p>
+        </div>
+
+        <div class="note risk">
+          <span class="tag">Concurrency is tighter than r1 implied — real numbers</span>
+          <p>
+            R1 said "a worker queue bounded at <code>cpus − 1</code>" and "don't hold the lock across
+            an encode". Both correct, and the lock-ordering rule it cited is real
+            (<code>manifest.ts:22-25</code>). But it understated the constraint:
+          </p>
+          <ul class="small">
+            <li><code>withFileLock</code> retries 40 times with <code>10 + attempt×5</code> ms backoff — <strong>~4.3 s then it throws</strong> (<code>lock.ts:19-49</code>). Every grid read goes through <code>listAllFiles</code> → <code>reconcile</code>, which takes the same lock. A backfill doing one lock-acquire per file will start <em>failing user requests</em>.</li>
+            <li>Each result-write is an O(n) rewrite of the whole manifest JSON. 412 files ⇒ 412 full rewrites.</li>
+            <li>The 10 s stale-lock TTL (<code>lock.ts:37-42</code>) means a holder that overruns gets its lock <strong>deleted by a waiter</strong> → two concurrent writers → lost <code>derived</code> blocks.</li>
+          </ul>
+          <p>
+            <strong>So:</strong> batch manifest writes (one write per N completed results, not per
+            file), and bound worker concurrency against <em>lock contention</em>, not just CPU count.
+            This is the one piece of real infrastructure in phase 1, and it is larger than r1 made it
+            sound. <span class="pill bad">fixed in r2</span>
+          </p>
+        </div>
+
+        <div class="note">
+          <span class="tag">Backlog wiring</span>
+          <p>
+            This resolves <strong>Item 15</strong>'s single open question — verbatim, "decide the one
+            resize pipeline before building two parallel ones" — by making presets that pipeline.
+            Item 15 goes <code>blocked</code> → <code>ready</code> <em>once the two confirmations at
+            the top of this page are given</em>, and is <strong>re-scoped <code>size: M</code> →
+            <code>L</code></strong>: the schema extension, size backfill, migration path, hashing and
+            batched-write queue are all work r1 did not account for.
+          </p>
+          <p>
+            It settles <strong>Item 35</strong> in favour of adopting <code>sharp</code> (its
+            acceptance explicitly allows either branch), and gives <strong>Item 7</strong> (static
+            export) a pipeline to call instead of inventing one.
+            <strong>Item 23</strong> (video &amp; GIF) already carries "thumbnail generation for the
+            grid, mirroring the image thumbnail path" in its acceptance — so it now
+            <em>depends on</em> this item, and its <code>depends_on</code> should say so.
+            <code>FEATURES.md</code>, the triage board and the <code>test-fixtures/</code> seed all
+            move in the same change that ships phase 1.
+          </p>
+        </div>
+
+        <div class="note risk">
+          <span class="tag">Honest status under this repo's own invariant</span>
+          <p>
+            CLAUDE.md's cardinal rule is <code>status: ready ⇔ open_questions: 0</code>. R1's header
+            claimed zero while four unresolved engineering decisions sat in the body — an over-eager
+            <code>ready</code> of exactly the kind that rule exists to prevent. R2 turned the schema
+            extension and size backfill into specified work; r3 settled the VCS policy and deferred
+            versioned URLs with reasoning recorded.
+          </p>
+          <p>
+            <strong>Item 15 is now genuinely <code>ready</code></strong> — with one caveat that belongs
+            in its frontmatter rather than being buried: the Vercel cache-header check is a
+            <em>precondition</em>, not a task. If headers can't be set, versioned URLs return to
+            phase 1 and the item needs re-planning, not just re-estimating. A deferred decision with a
+            recorded trigger is not an open question; a deferred decision with no trigger would be.
+          </p>
+        </div>
+      </section>
+
+      <footer>
+        Plan · media-manager · drafted 2026-08-18 · companion to
+        <code>docs/FUTURE_CHANGES.md</code> Item 15
+      </footer>
+    </div>
+  </body>
+</html>

@@ -356,3 +356,204 @@ describe('MediaManager — static-assets baseUrl mode', () => {
 		);
 	});
 });
+
+describe('MediaManager — compressed variants (Item 15)', () => {
+	/**
+	 * The fixture plus `derived` blocks on the manifest: f1 has a same-size `web` re-encode **and** a
+	 * downscaled `thumb` (400px wide, vs the original's 100), f2 has a *skipped* `web` entry (no
+	 * `file_name` ⇒ no file exists).
+	 */
+	function withDerived(): ParsedWorkspace {
+		const f = fixture();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		files.f1.derived = {
+			web: {
+				file_name: 'Sunset.webp',
+				size: 3801,
+				width: 100,
+				height: 50,
+				ssim: 0.987,
+				recipe: 'webp:q80',
+				source_size: 42138,
+				generated_at: '2026-08-18T10:00:00.000Z'
+			},
+			thumb: {
+				file_name: 'Sunset-thumb.webp',
+				size: 900,
+				width: 400,
+				height: 200,
+				recipe: 'webp:q70:w400'
+			}
+		};
+		files.f2.derived = { web: { skipped: 'unsupported', recipe: 'webp:q80' } };
+		return f;
+	}
+
+	/** The matching `derived` glob output: preset → (filename → hashed URL). */
+	function derivedAssets(): Record<string, Record<string, string>> {
+		return {
+			web: { 'Sunset.webp': '/assets/sunset.web.hash.webp' },
+			thumb: { 'Sunset-thumb.webp': '/assets/sunset.thumb.hash.webp' }
+		};
+	}
+
+	it('resolves variant URLs from the derived glob', () => {
+		const mm = MediaManager.fromParsed({ ...withDerived(), derivedAssets: derivedAssets() });
+		const f1 = mm.file('f1')!;
+		expect(f1.variant('web')).toBe('/assets/sunset.web.hash.webp');
+		expect(f1.variantInfo('web')).toEqual({
+			preset: 'web',
+			src: '/assets/sunset.web.hash.webp',
+			width: 100,
+			height: 50,
+			size: 3801,
+			ssim: 0.987
+		});
+		// the original's own src is untouched
+		expect(f1.src).toBe('/assets/sunset.hash.jpeg');
+	});
+
+	it('reports the DERIVATIVE dimensions, not the original blob dimensions', () => {
+		const mm = MediaManager.fromParsed({ ...withDerived(), derivedAssets: derivedAssets() });
+		const f1 = mm.file('f1')!;
+		expect(f1.width).toBe(100); // the original
+		const thumb = f1.variantInfo('thumb')!;
+		expect(thumb.width).toBe(400); // the 400px-wide derivative
+		expect(thumb.height).toBe(200);
+		expect(thumb.ssim).toBeNull(); // unscored derivative
+	});
+
+	it('exposes the same variants through a class view', () => {
+		const mm = MediaManager.fromParsed({ ...withDerived(), derivedAssets: derivedAssets() });
+		const fromClass = mm.media('photos').find((m) => m.id === 'f1')!;
+		expect(fromClass.variant('web')).toBe('/assets/sunset.web.hash.webp');
+		expect(fromClass.variantInfo('thumb')?.width).toBe(400);
+	});
+
+	it('treats a skipped entry (no file_name) as absent', () => {
+		const mm = MediaManager.fromParsed({ ...withDerived(), derivedAssets: derivedAssets() });
+		const f2 = mm.file('f2')!;
+		expect(f2.variant('web')).toBeNull();
+		expect(f2.variantInfo('web')).toBeNull();
+		expect(f2.variants.size).toBe(0);
+	});
+
+	it('returns null for an unknown preset (no nearest-preset fallback)', () => {
+		const mm = MediaManager.fromParsed({ ...withDerived(), derivedAssets: derivedAssets() });
+		const f1 = mm.file('f1')!;
+		expect(f1.variant('nope')).toBeNull();
+		expect(f1.variantInfo('nope')).toBeNull();
+	});
+
+	it('returns null when the derivative filename did not resolve to a URL', () => {
+		// derived blocks present, but the host wired no derived glob at all
+		const mm = MediaManager.fromParsed(withDerived());
+		expect(mm.file('f1')?.variant('web')).toBeNull();
+		expect(mm.file('f1')?.variants.size).toBe(0);
+	});
+
+	it('yields empty variants for a manifest with no derived key at all', () => {
+		const mm = MediaManager.fromParsed(fixture());
+		const f1 = mm.file('f1')!;
+		expect(f1.variants.size).toBe(0);
+		expect(f1.variant('web')).toBeNull();
+		expect(f1.variantInfo('web')).toBeNull();
+		// and the original still resolves — strictly non-breaking
+		expect(f1.src).toBe('/assets/sunset.hash.jpeg');
+	});
+
+	it('classifies a derived glob by preset directory via MediaManager.load', () => {
+		const mm = MediaManager.load({
+			data: {
+				'/x/media/manifest.json': {
+					version: 2,
+					files: {
+						f1: {
+							file_name: 'a.png',
+							classes: [],
+							missing: false,
+							derived: {
+								web: { file_name: 'a.webp', width: 800, height: 600, size: 1234 },
+								thumb: { file_name: 'a.webp', width: 400, height: 300, size: 99 }
+							}
+						}
+					}
+				}
+			},
+			files: { '/x/media/files/a.png': '/assets/a.hash.png' },
+			derived: {
+				'/x/media/derived/web/a.webp': '/assets/a.web.hash.webp',
+				'/x/media/derived/thumb/a.webp': '/assets/a.thumb.hash.webp'
+			}
+		});
+		const f1 = mm.file('f1')!;
+		// same basename under two presets must NOT collide
+		expect(f1.variant('web')).toBe('/assets/a.web.hash.webp');
+		expect(f1.variant('thumb')).toBe('/assets/a.thumb.hash.webp');
+		expect(f1.variantInfo('thumb')?.width).toBe(400);
+		expect(f1.src).toBe('/assets/a.hash.png');
+	});
+});
+
+describe('MediaManager — variants × static-assets baseUrl mode', () => {
+	function withDerivedNoAssets(): ParsedWorkspace {
+		const f = fixture();
+		delete f.assets;
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		files.f1.derived = { thumb: { file_name: 'Sunset-thumb.webp', width: 400, height: 200 } };
+		return f;
+	}
+
+	it('REGRESSION: no derived glob + baseUrl still resolves every original src', () => {
+		// Guards the `assetIndex.size === 0` gate: derivatives must never populate the originals index.
+		const mm = MediaManager.fromParsed(withDerivedNoAssets(), { assets: { baseUrl: '/media' } });
+		expect(mm.file('f1')?.src).toBe('/media/Sunset.JPEG');
+		expect(mm.file('f1')?.missing).toBe(false);
+		expect(mm.file('f2')?.src).toBe('/media/doc.pdf');
+		expect(mm.file('f2')?.missing).toBe(false);
+	});
+
+	it('REGRESSION: a derived glob does not disable baseUrl synthesis for originals', () => {
+		const mm = MediaManager.fromParsed(
+			{
+				...withDerivedNoAssets(),
+				derivedAssets: { thumb: { 'Sunset-thumb.webp': '/assets/t.hash.webp' } }
+			},
+			{ assets: { baseUrl: '/media' } }
+		);
+		expect(mm.file('f1')?.src).toBe('/media/Sunset.JPEG'); // originals still synthesized
+		expect(mm.file('f1')?.missing).toBe(false);
+		expect(mm.file('f1')?.variant('thumb')).toBe('/assets/t.hash.webp'); // glob wins for derivatives
+	});
+
+	it('synthesizes derived URLs with a derived/<preset>/ path segment', () => {
+		const mm = MediaManager.fromParsed(withDerivedNoAssets(), { assets: { baseUrl: '/media' } });
+		expect(mm.file('f1')?.variant('thumb')).toBe('/media/derived/thumb/Sunset-thumb.webp');
+		expect(mm.file('f1')?.variantInfo('thumb')?.width).toBe(400);
+	});
+
+	it('percent-encodes synthesized derived filenames and honours encode:false', () => {
+		const f = withDerivedNoAssets();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		files.f1.derived = { thumb: { file_name: 'my photo#1.webp' } };
+		expect(
+			MediaManager.fromParsed(f, { assets: { baseUrl: '/media/' } })
+				.file('f1')
+				?.variant('thumb')
+		).toBe('/media/derived/thumb/my%20photo%231.webp');
+		expect(
+			MediaManager.fromParsed(f, { assets: { baseUrl: '/media', encode: false } })
+				.file('f1')
+				?.variant('thumb')
+		).toBe('/media/derived/thumb/my photo#1.webp');
+	});
+
+	it('does not synthesize a URL for a skipped derived entry', () => {
+		const f = withDerivedNoAssets();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		files.f1.derived = { thumb: { skipped: 'larger', recipe: 'webp:q70:w400' } };
+		const mm = MediaManager.fromParsed(f, { assets: { baseUrl: '/media' } });
+		expect(mm.file('f1')?.variant('thumb')).toBeNull();
+		expect(mm.file('f1')?.src).toBe('/media/Sunset.JPEG');
+	});
+});

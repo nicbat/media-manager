@@ -139,6 +139,114 @@ describe('migrateBlobs', () => {
 	});
 });
 
+/**
+ * Derivatives (Item 15) travel with the blobs.
+ *
+ * The asymmetry this exercises is deliberate and easy to get wrong: in **classic** mode the derived root
+ * is `<root>/media/derived`, a *sibling* of `media/files`; in **static-assets** mode it is
+ * `<assetsDir>/derived`, *inside* the published asset root (so the reader's `baseUrl` composes to
+ * `${baseUrl}/derived/<preset>/<name>` with nothing further to configure).
+ */
+describe('derivative transfer (Item 15)', () => {
+	/** Attach a `web` derivative to every seeded manifest entry and write the files under the classic root. */
+	function seedDerived(map: Record<string, string>, bytes = 'derived-bytes-xxxxx') {
+		const manifestPath = path.join(root, 'media', 'manifest.json');
+		const m = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+		const dir = path.join(root, 'media', 'derived', 'web');
+		fs.mkdirSync(dir, { recursive: true });
+		for (const [id, derivedName] of Object.entries(map)) {
+			m.files[id].derived = {
+				web: { file_name: derivedName, recipe: 'webp:q80', size: bytes.length }
+			};
+			fs.writeFileSync(path.join(dir, derivedName), bytes);
+		}
+		fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+	}
+
+	it('previewMigration counts derivative bytes inside bytesToTransfer', async () => {
+		seed(['a.png', 'b.png']);
+		const blobOnly = await previewMigration({
+			toDir: path.join(root, 'static', 'media'),
+			strategy: 'move'
+		});
+		expect(blobOnly.derivedCount).toBe(0);
+		expect(blobOnly.derivedBytes).toBe(0);
+
+		seedDerived({ 'id-0': 'a.webp', 'id-1': 'b.webp' });
+		const withDerived = await previewMigration({
+			toDir: path.join(root, 'static', 'media'),
+			strategy: 'move'
+		});
+
+		expect(withDerived.derivedCount).toBe(2);
+		expect(withDerived.derivedBytes).toBeGreaterThan(0);
+		// The derivative bytes are *included* in the headline figure, not reported beside it — a move that
+		// looks like it fits must not run the destination out of disk.
+		expect(withDerived.bytesToTransfer).toBe(blobOnly.bytesToTransfer + withDerived.derivedBytes);
+		// Read-only: nothing was written to the destination.
+		expect(fs.existsSync(path.join(root, 'static', 'media'))).toBe(false);
+	});
+
+	it('move relocates the derived tree INTO the destination assets dir and reports the count', async () => {
+		seed(['a.png']);
+		seedDerived({ 'id-0': 'a.webp' });
+		const to = path.join(root, 'static', 'media');
+
+		const res = await migrateBlobs({ toDir: to, strategy: 'move' });
+
+		expect(res.aborted).toBe(false);
+		expect(res.moved).toBe(1);
+		expect(res.derivedTransferred).toBe(1);
+		// Destination derived root is INSIDE the assets dir…
+		expect(fs.existsSync(path.join(to, 'derived', 'web', 'a.webp'))).toBe(true);
+		// …whereas the classic source root was a SIBLING of media/files.
+		expect(fs.existsSync(path.join(root, 'media', 'derived', 'web', 'a.webp'))).toBe(false);
+		// Not a nested `<toDir>/media/derived` and not left at the workspace root.
+		expect(fs.existsSync(path.join(to, 'media'))).toBe(false);
+	});
+
+	it('copy duplicates the derivatives and keeps the source tree', async () => {
+		seed(['a.png']);
+		seedDerived({ 'id-0': 'a.webp' });
+		const to = path.join(root, 'static', 'media');
+
+		const res = await migrateBlobs({ toDir: to, strategy: 'copy' });
+
+		expect(res.derivedTransferred).toBe(1);
+		expect(fs.existsSync(path.join(to, 'derived', 'web', 'a.webp'))).toBe(true);
+		expect(fs.existsSync(path.join(root, 'media', 'derived', 'web', 'a.webp'))).toBe(true);
+	});
+
+	it('leave transfers no derivatives (repoint only)', async () => {
+		seed(['a.png']);
+		seedDerived({ 'id-0': 'a.webp' });
+		const to = path.join(root, 'static', 'media');
+
+		const res = await migrateBlobs({ toDir: to, strategy: 'leave' });
+
+		expect(res.derivedCount).toBe(0);
+		expect(res.derivedTransferred).toBe(0);
+		expect(fs.existsSync(path.join(to, 'derived'))).toBe(false);
+		expect(fs.existsSync(path.join(root, 'media', 'derived', 'web', 'a.webp'))).toBe(true);
+	});
+
+	it('a derivative missing at the source never blocks the migration (it is regenerable)', async () => {
+		seed(['a.png']);
+		seedDerived({ 'id-0': 'a.webp' });
+		fs.rmSync(path.join(root, 'media', 'derived', 'web', 'a.webp')); // manifest still claims it
+		const to = path.join(root, 'static', 'media');
+
+		const pre = await previewMigration({ toDir: to, strategy: 'move' });
+		expect(pre.derivedCount).toBe(0); // not present ⇒ not counted, and not a conflict/missing blocker
+		expect(pre.missingAtSource).toEqual([]);
+
+		const res = await migrateBlobs({ toDir: to, strategy: 'move' });
+		expect(res.aborted).toBe(false);
+		expect(res.moved).toBe(1);
+		expect(res.derivedTransferred).toBe(0);
+	});
+});
+
 describe('previewMigration', () => {
 	it('reports the plan without moving anything', async () => {
 		seed(['a.png', 'b.png']);

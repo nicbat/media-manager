@@ -23,6 +23,7 @@
 	import { fieldLabel } from '$lib/core/fieldKeys.js';
 	import { OPERATORS } from '$lib/core/filters.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
+	import { formatBytes } from '$lib/core/bytes.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import BulkSetFieldDialog from '$lib/components/BulkSetFieldDialog.svelte';
 	import EntityRail from '$lib/components/rail/EntityRail.svelte';
@@ -288,19 +289,6 @@
 
 	/** A verboseFields key is a File-info (intrinsic) key vs. a class schema field key. */
 	const isFileInfoKey = (key: string) => key.startsWith(FILE_INFO_PREFIX);
-
-	/** Compact human byte size (e.g. `1.2 MB`); whole numbers for bytes. */
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		const units = ['KB', 'MB', 'GB', 'TB'];
-		let v = bytes / 1024;
-		let i = 0;
-		while (v >= 1024 && i < units.length - 1) {
-			v /= 1024;
-			i++;
-		}
-		return `${v.toFixed(1)} ${units[i]}`;
-	}
 
 	/** Render one File-info (intrinsic) key for a blob to a short string (`''` when unknown). */
 	function intrinsicValue(f: FileItem, key: string): string {

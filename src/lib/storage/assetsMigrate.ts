@@ -2,9 +2,10 @@ import fs from 'node:fs/promises';
 import * as fssync from 'node:fs';
 import path from 'node:path';
 
-import { getGlobalFilesDir, getManifestPath } from './paths.js';
+import { derivedRootForBlobDir, getGlobalFilesDir, getManifestPath } from './paths.js';
 import { readManifest } from './manifest.js';
 import { withFileLock } from './lock.js';
+import { listDerivedRelPaths } from './derived.js';
 
 /**
  * Blob-migration engine — the byte-moving half of "change where blobs live" (the storage-location UI).
@@ -54,8 +55,12 @@ export interface MigratePreflight {
 	missingAtSource: string[];
 	/** Names where a *different* file already exists at `toDir` — a hard blocker (never clobbered). */
 	conflicts: string[];
-	/** Bytes that would be transferred (0 for `leave` / `sameDir`). */
+	/** Bytes that would be transferred (0 for `leave` / `sameDir`) — originals **and** derivatives. */
 	bytesToTransfer: number;
+	/** Generated compressed derivatives that travel with the blobs (Item 15). */
+	derivedCount: number;
+	/** Bytes of those derivatives, already included in {@link bytesToTransfer}. */
+	derivedBytes: number;
 	/** Best-effort free-space check at the destination (true when it can't be determined). */
 	freeSpaceOk: boolean;
 }
@@ -74,6 +79,8 @@ export interface MigrateResult extends MigratePreflight {
 	reason?: string;
 	moved: number;
 	copied: number;
+	/** Derivative files transferred (counted separately from the blobs). */
+	derivedTransferred: number;
 	/** Blobs skipped (already identical at the destination, or a no-op `leave`/`sameDir`). */
 	skipped: number;
 	failed: MigrateFailure[];
@@ -132,12 +139,14 @@ function checkFreeSpace(dir: string, bytes: number): boolean {
  * @param toDir - Requested destination (absolute).
  * @param strategy - move / copy / leave.
  * @param names - Manifest blob filenames.
+ * @param derivedRel - Manifest-referenced derivative paths, relative to the derived root (Item 15).
  */
 async function buildPreflight(
 	fromDir: string,
 	toDir: string,
 	strategy: MigrateStrategy,
-	names: string[]
+	names: string[],
+	derivedRel: string[]
 ): Promise<MigratePreflight> {
 	const sameDir = path.resolve(fromDir) === path.resolve(toDir);
 	const missingAtSource: string[] = [];
@@ -165,6 +174,22 @@ async function buildPreflight(
 		}
 	}
 
+	// Derivatives (Item 15) travel with the blobs. They are *generated*, so a name conflict or a missing
+	// source is never a blocker — worst case a backfill regenerates them — but their bytes must be in the
+	// free-space check, or a move that looks like it fits can run the destination out of disk.
+	const fromDerived = derivedRootForBlobDir(fromDir);
+	let derivedCount = 0;
+	let derivedBytes = 0;
+	if (!sameDir && strategy !== 'leave') {
+		for (const rel of derivedRel) {
+			const st = await statOrNull(path.join(fromDerived, rel));
+			if (!st || !st.isFile()) continue;
+			derivedCount++;
+			derivedBytes += st.size;
+		}
+		bytesToTransfer += derivedBytes;
+	}
+
 	const freeSpaceOk =
 		strategy === 'leave' || sameDir ? true : checkFreeSpace(toDir, bytesToTransfer);
 
@@ -178,8 +203,52 @@ async function buildPreflight(
 		missingAtSource,
 		conflicts,
 		bytesToTransfer,
+		derivedCount,
+		derivedBytes,
 		freeSpaceOk
 	};
+}
+
+/**
+ * Transfer the manifest's derivatives alongside the blobs.
+ *
+ * Best-effort by design: unlike an original, a derivative that fails to copy is *regenerable*, so a
+ * failure here is logged and counted rather than being allowed to abort or roll back a migration whose
+ * originals already landed.
+ *
+ * @param fromBlobDir - The source blob dir (its derived root is resolved from it).
+ * @param toBlobDir - The destination blob dir.
+ * @param relPaths - `<preset>/<name>` paths from the manifest.
+ * @param strategy - move / copy.
+ * @returns How many derivative files were transferred.
+ */
+async function transferDerived(
+	fromBlobDir: string,
+	toBlobDir: string,
+	relPaths: string[],
+	strategy: MigrateStrategy
+): Promise<number> {
+	const fromRoot = derivedRootForBlobDir(fromBlobDir);
+	const toRoot = derivedRootForBlobDir(toBlobDir);
+	let transferred = 0;
+
+	for (const rel of relPaths) {
+		const src = path.join(fromRoot, rel);
+		const dst = path.join(toRoot, rel);
+		const srcStat = await statOrNull(src);
+		if (!srcStat || !srcStat.isFile()) continue;
+		try {
+			await fs.mkdir(path.dirname(dst), { recursive: true });
+			await fs.copyFile(src, dst);
+			const check = await fs.stat(dst);
+			if (check.size !== srcStat.size) continue;
+			if (strategy === 'move') await fs.unlink(src).catch(() => {});
+			transferred++;
+		} catch (e) {
+			console.error(`[storage] derivative ${rel} not transferred: ${(e as Error).message}`);
+		}
+	}
+	return transferred;
 }
 
 /**
@@ -196,7 +265,8 @@ export async function previewMigration(input: {
 	const fromDir = getGlobalFilesDir();
 	const toDir = path.resolve(input.toDir);
 	const names = await manifestBlobNames();
-	return buildPreflight(fromDir, toDir, input.strategy, names);
+	const derivedRel = await listDerivedRelPaths();
+	return buildPreflight(fromDir, toDir, input.strategy, names, derivedRel);
 }
 
 /**
@@ -222,12 +292,14 @@ export async function migrateBlobs(input: {
 		const fromDir = getGlobalFilesDir();
 		const toDir = path.resolve(input.toDir);
 		const names = await manifestBlobNames();
-		const pre = await buildPreflight(fromDir, toDir, input.strategy, names);
+		const derivedRel = await listDerivedRelPaths();
+		const pre = await buildPreflight(fromDir, toDir, input.strategy, names, derivedRel);
 		const base: MigrateResult = {
 			...pre,
 			aborted: false,
 			moved: 0,
 			copied: 0,
+			derivedTransferred: 0,
 			skipped: 0,
 			failed: []
 		};
@@ -311,6 +383,8 @@ export async function migrateBlobs(input: {
 			}
 		}
 
-		return { ...base, moved, copied, skipped, failed };
+		const derivedTransferred = await transferDerived(fromDir, toDir, derivedRel, input.strategy);
+
+		return { ...base, moved, copied, derivedTransferred, skipped, failed };
 	});
 }

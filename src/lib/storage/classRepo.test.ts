@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -18,8 +18,11 @@ import {
 	updateSchemaField,
 	reorderSchemaFields,
 	getClassSchema,
-	getUniqueFieldValues
+	getUniqueFieldValues,
+	renameBlobById,
+	deleteFromDiskById
 } from './classRepo.js';
+import { readManifest, setDerivedEntries, type DerivedEntry } from './manifest.js';
 import { createMediaType } from './mediaTypes.js';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
@@ -462,5 +465,156 @@ describe('reorderSchemaFields (json type)', () => {
 		const reread = await repo.getSchema();
 		const order2 = Object.keys(reread).filter((k) => ['owner', 'priority', 'due'].includes(k));
 		expect(order2).toEqual(['owner', 'priority', 'due']);
+	});
+});
+
+/**
+ * The blob lifecycle's compression half (Item 15): a derivative is bookkeeping *about* an original, so
+ * deleting or renaming the original has to carry it along — a derivative of a deleted blob is garbage,
+ * and one left under a stale name is only reachable because every lookup reads the manifest.
+ */
+describe('blob lifecycle keeps derivatives in step (Item 15)', () => {
+	let root: string;
+	let filesDir: string;
+	let derivedRoot: string;
+
+	beforeEach(() => {
+		root = path.join(
+			tmpdir(),
+			`mm-class-derived-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
+		filesDir = path.join(root, 'media', 'files');
+		derivedRoot = path.join(root, 'media', 'derived');
+		fs.mkdirSync(filesDir, { recursive: true });
+		fs.mkdirSync(path.join(root, 'media', 'classes'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+		delete process.env.MEDIA_MANAGER_ASSETS_DIR;
+	});
+
+	afterEach(() => {
+		delete process.env.MEDIA_MANAGER_ASSETS_DIR;
+		fs.rmSync(root, { recursive: true, force: true });
+	});
+
+	/** Register a blob on disk, give it a `web` derivative on disk + in the manifest, return its id. */
+	async function seedBlobWithDerivative(name: string, derivedName: string): Promise<string> {
+		fs.writeFileSync(path.join(filesDir, name), 'original-bytes');
+		const id = (await listAllFiles()).files.find((f) => f.file_name === name)!.id;
+		fs.mkdirSync(path.join(derivedRoot, 'web'), { recursive: true });
+		fs.writeFileSync(path.join(derivedRoot, 'web', derivedName), 'derived-bytes');
+		const entry: DerivedEntry = {
+			file_name: derivedName,
+			size: 13,
+			width: 40,
+			height: 30,
+			ssim: 0.99,
+			recipe: 'webp:q80',
+			source_size: 14
+		};
+		await setDerivedEntries(new Map([[id, { web: entry }]]));
+		return id;
+	}
+
+	it('deleteFromDiskById removes the derivative file AND its manifest record', async () => {
+		const id = await seedBlobWithDerivative('a.png', 'a.webp');
+		const keeperId = await seedBlobWithDerivative('b.png', 'b.webp');
+
+		await deleteFromDiskById(id);
+
+		expect(fs.existsSync(path.join(filesDir, 'a.png'))).toBe(false);
+		expect(fs.existsSync(path.join(derivedRoot, 'web', 'a.webp'))).toBe(false);
+		const manifest = await readManifest();
+		expect(manifest.files[id]).toBeUndefined();
+		// The other blob's derivative is untouched.
+		expect(manifest.files[keeperId].derived?.web.file_name).toBe('b.webp');
+		expect(fs.existsSync(path.join(derivedRoot, 'web', 'b.webp'))).toBe(true);
+	});
+
+	it('renameBlobById renames the derivative on disk and updates its manifest file_name', async () => {
+		const id = await seedBlobWithDerivative('old.png', 'old.webp');
+
+		await renameBlobById(id, 'new.png');
+
+		expect(fs.existsSync(path.join(filesDir, 'new.png'))).toBe(true);
+		expect(fs.existsSync(path.join(derivedRoot, 'web', 'new.webp'))).toBe(true);
+		expect(fs.existsSync(path.join(derivedRoot, 'web', 'old.webp'))).toBe(false);
+
+		// Still readable *through the manifest* — the only lookup path there is.
+		const entry = (await readManifest()).files[id];
+		expect(entry.file_name).toBe('new.png');
+		expect(entry.derived?.web.file_name).toBe('new.webp');
+		expect(
+			fs.readFileSync(path.join(derivedRoot, 'web', entry.derived!.web.file_name!), 'utf-8')
+		).toBe('derived-bytes');
+		// The rename is bookkeeping only: the staleness key and measurements survive.
+		expect(entry.derived?.web).toMatchObject({ recipe: 'webp:q80', size: 13, ssim: 0.99 });
+	});
+
+	it('a rename colliding with an existing derivative stem picks a free name', async () => {
+		const id = await seedBlobWithDerivative('old.png', 'old.webp');
+		await seedBlobWithDerivative('taken.png', 'taken.webp');
+
+		await renameBlobById(id, 'taken.jpg'); // different original extension, same stem
+
+		const derived = (await readManifest()).files[id].derived?.web;
+		expect(derived?.file_name).not.toBe('taken.webp');
+		expect(fs.existsSync(path.join(derivedRoot, 'web', derived!.file_name!))).toBe(true);
+		// The other blob's derivative was not clobbered.
+		expect(fs.readFileSync(path.join(derivedRoot, 'web', 'taken.webp'), 'utf-8')).toBe(
+			'derived-bytes'
+		);
+	});
+});
+
+describe('lazy size backfill on listing (Item 15)', () => {
+	let root: string;
+	let filesDir: string;
+
+	beforeEach(() => {
+		root = path.join(tmpdir(), `mm-size-heal-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+		filesDir = path.join(root, 'media', 'files');
+		fs.mkdirSync(filesDir, { recursive: true });
+		fs.mkdirSync(path.join(root, 'media', 'classes'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+	});
+
+	afterEach(() => {
+		fs.rmSync(root, { recursive: true, force: true });
+	});
+
+	it('gives a hand-dropped blob adopted by reconcile a size (fixes the empty file:size cell)', async () => {
+		// `size` was historically written only at mint, so anything adopted from disk had none.
+		const bytes = 'hand-dropped-bytes';
+		fs.writeFileSync(path.join(filesDir, 'dropped.png'), bytes);
+
+		const { files } = await listAllFiles();
+		expect(files).toHaveLength(1);
+		expect(files[0].size).toBe(bytes.length);
+
+		// And it is persisted, not just projected onto the response.
+		const manifest = await readManifest();
+		expect(manifest.files[files[0].id].size).toBe(bytes.length);
+	});
+
+	it('backfills sizes for non-image blobs too (the dimension backfill skips those)', async () => {
+		fs.writeFileSync(path.join(filesDir, 'notes.pdf'), 'pdf-ish');
+		const { files } = await listAllFiles();
+		expect(files[0].size).toBe('pdf-ish'.length);
+		expect(files[0].width).toBeUndefined();
+	});
+
+	it('is lazy — an already-recorded size is left alone (no per-listing stat storm)', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'abcdef');
+		const id = (await listAllFiles()).files[0].id;
+		expect((await readManifest()).files[id].size).toBe(6);
+
+		// Hand-edit the stored size to disagree with disk: the backfill only fills *absent* sizes, so it
+		// must not re-stat and correct this one (that is `mintFileId`'s job, on re-upload).
+		const manifestPath = path.join(root, 'media', 'manifest.json');
+		const doc = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+		doc.files[id].size = 9999;
+		fs.writeFileSync(manifestPath, JSON.stringify(doc));
+
+		expect((await listAllFiles()).files[0].size).toBe(9999);
 	});
 });

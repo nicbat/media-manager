@@ -6,6 +6,8 @@ import { getGlobalFilesDir } from '$lib/storage/paths.js';
 import { assertSafeBasename } from '$lib/storage/filenames.js';
 import { registerBlob } from '$lib/storage/classRepo.js';
 import { maybeConvertHeic } from '$lib/server/heicConvert.js';
+import { scheduleCompression } from '$lib/server/compression/queue.js';
+import { readCompressionSettings } from '$lib/storage/compressionSettings.js';
 
 /** Append (1), (2)… to a basename until it is unique within `dir`. */
 function uniqueName(baseFilename: string, dir: string): string {
@@ -62,6 +64,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		fs.writeFileSync(path.join(filesDir, safeFileName), buffer);
 		const id = await registerBlob(safeFileName, buffer.length);
+		// Queue the compressed derivative behind the response (Item 15). Deliberately not awaited: a slow
+		// encode must never make an upload feel slow.
+		if (readCompressionSettings().autoCompress) scheduleCompression([id]);
 		return json({ success: true, id, file_id: id, filename: safeFileName });
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

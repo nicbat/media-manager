@@ -774,12 +774,16 @@ function exportWorkspace() {
 	// Copy the JSON tree, excluding the in-workspace blob subtree (populated below), the Google secret,
 	// and lock files.
 	const filesSubtree = path.join(root, 'media', 'files');
+	const derivedSubtree = path.join(root, 'media', 'derived');
 	const googleSecret = path.join(root, 'media', 'google.json');
 	fs.cpSync(root, dest, {
 		recursive: true,
 		force: true,
 		filter: (src) => {
 			if (src === filesSubtree || src.startsWith(filesSubtree + path.sep)) return false;
+			// Compressed derivatives (Item 15) are copied by manifest below, exactly like blobs — in
+			// static-assets mode they live outside the workspace entirely, so a tree copy would miss them.
+			if (src === derivedSubtree || src.startsWith(derivedSubtree + path.sep)) return false;
 			if (src === googleSecret) return false;
 			if (src.endsWith('.lock')) return false;
 			return true;
@@ -789,11 +793,17 @@ function exportWorkspace() {
 
 	// Reunite blobs by manifest.
 	let manifestNames = [];
+	/** `<preset>/<name>` paths of every derivative the manifest currently references. */
+	let derivedRel = [];
 	try {
 		const m = JSON.parse(fs.readFileSync(path.join(root, 'media', 'manifest.json'), 'utf-8'));
-		manifestNames = Object.values(m.files || {})
-			.map((e) => (e && typeof e.file_name === 'string' ? e.file_name : null))
-			.filter(Boolean);
+		for (const e of Object.values(m.files || {})) {
+			if (!e || typeof e.file_name !== 'string') continue;
+			manifestNames.push(e.file_name);
+			for (const [presetId, d] of Object.entries(e.derived || {})) {
+				if (d && typeof d.file_name === 'string') derivedRel.push(`${presetId}/${d.file_name}`);
+			}
+		}
 	} catch {
 		console.log('· manifest    none found — exporting JSON only (no blobs)');
 	}
@@ -826,6 +836,32 @@ function exportWorkspace() {
 	if (missing.length) {
 		console.log(
 			`✘ blobs       ${missing.length} manifest blob(s) absent from the source: ${missing.slice(0, 5).join(', ')}`
+		);
+	}
+
+	// Compressed derivatives (Item 15). Copied by manifest for the same reason blobs are, and resolved
+	// from the *blob* dir's derived root: classic keeps them at `<root>/media/derived` (a sibling of
+	// `media/files`), static-assets mode at `<assetsDir>/derived` (inside the published root). They are
+	// regenerable, so a missing one is a note, never a non-zero exit.
+	if (derivedRel.length) {
+		const srcDerived = resolved.assets
+			? path.join(blobDir, 'derived')
+			: path.join(root, 'media', 'derived');
+		const destDerived = path.join(dest, 'media', 'derived');
+		let derivedCopied = 0;
+		for (const rel of derivedRel) {
+			const srcFile = path.join(srcDerived, rel);
+			if (!fs.existsSync(srcFile)) continue;
+			const dstFile = path.join(destDerived, rel);
+			fs.mkdirSync(path.dirname(dstFile), { recursive: true });
+			fs.copyFileSync(srcFile, dstFile);
+			derivedCopied++;
+		}
+		console.log(
+			`${derivedCopied === derivedRel.length ? '✔' : '!'} derived     ${derivedCopied}/${derivedRel.length} compressed derivative(s) copied` +
+				(derivedCopied === derivedRel.length
+					? ''
+					: ' — run a backfill in the export to regenerate the rest')
 		);
 	}
 

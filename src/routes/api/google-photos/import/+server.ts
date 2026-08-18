@@ -6,6 +6,8 @@ import { getGlobalFilesDir } from '$lib/storage/paths.js';
 import { assertSafeBasename } from '$lib/storage/filenames.js';
 import { registerBlob } from '$lib/storage/classRepo.js';
 import { maybeConvertHeic } from '$lib/server/heicConvert.js';
+import { scheduleCompression } from '$lib/server/compression/queue.js';
+import { readCompressionSettings } from '$lib/storage/compressionSettings.js';
 import {
 	getAccessToken,
 	listPickedItems,
@@ -75,6 +77,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	await deleteSession(accessToken, sessionId);
+
+	// Item 15: `registerBlob` has two callers and compression hooks **both**. Wiring only upload would
+	// leave every imported photo uncompressed until someone happened to run a manual backfill.
+	if (fileIds.length > 0 && readCompressionSettings().autoCompress) scheduleCompression(fileIds);
 
 	return json({ imported: fileIds.length, failed: failures.length, fileIds, failures });
 };

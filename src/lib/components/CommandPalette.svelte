@@ -7,11 +7,11 @@
 	import { apiListPostCollections, type PostCollectionSummary } from '$lib/api/posts.js';
 	import type { ClassSummary } from '$lib/core/types.js';
 	import EntityIcon from '$lib/components/EntityIcon.svelte';
-	import { Files, Layers, SlidersHorizontal, PenLine, Home } from 'lucide-svelte';
+	import { Files, Layers, SlidersHorizontal, PenLine, Shrink, Home } from 'lucide-svelte';
 
 	/**
 	 * The global **⌘K command palette** — a cross-sub-app quick switcher mounted once in the root layout.
-	 * Press ⌘K (or Ctrl-K) anywhere to jump to a sub-app (Files / Records / Globals), a specific class
+	 * Press ⌘K (or Ctrl-K) anywhere to jump to a sub-app (Files / Records / Globals / Compression), a specific class
 	 * (opens its catalog at `/files?class=`), a record type (`/media?type=`), or Home. Composed from the
 	 * shadcn `Command` primitive (no hand-rolled overlay). Navigation-only for now — searching individual
 	 * files/records is a deferred follow-up.
@@ -82,6 +82,10 @@
 			<Command.Item value="Globals" onSelect={() => run('/globals')}>
 				<SlidersHorizontal class="size-4" />
 				<span>Globals</span>
+			</Command.Item>
+			<Command.Item value="Compression" onSelect={() => run('/compression')}>
+				<Shrink class="size-4" />
+				<span>Compression</span>
 			</Command.Item>
 		</Command.Group>
 

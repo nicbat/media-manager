@@ -25,6 +25,48 @@ const NON_BLOB_NAMES = new Set(['manifest.json', 'settings.json', 'data.json', '
  *   first**.
  */
 
+/**
+ * Why a derivative has no file: it was attempted (or deliberately not attempted) and produced nothing.
+ *
+ * - `unsupported` — not a still image sharp can read (video, PDF, animated GIF).
+ * - `larger` — the re-encode came out bigger than the original, so it was discarded.
+ * - `error` — the encoder threw (a corrupt or truncated source).
+ */
+export const DerivedSkipReasonSchema = z.enum(['unsupported', 'larger', 'error']);
+export type DerivedSkipReason = z.infer<typeof DerivedSkipReasonSchema>;
+
+/**
+ * One generated derivative of a blob, under one preset (Item 15 compression).
+ *
+ * Two shapes share this schema: a **generated** entry carries `file_name` + measurements, and a
+ * **skipped** entry carries `skipped` and no file. Both always carry `recipe` — staleness is a recipe
+ * *comparison*, so a skip with no recipe would mismatch every preset and be retried on every backfill
+ * forever, which is exactly what the skip exists to prevent.
+ *
+ * `width`/`height` are the **derivative's** dimensions, not the original's (a 400px-wide thumbnail has
+ * `width: 400`) — the reader hands these to `<img>` and using the original's would be wrong by
+ * construction.
+ */
+export const DerivedEntrySchema = z.object({
+	/** Basename within `derived/<preset>/`. Absent iff the derivative was skipped. */
+	file_name: z.string().optional(),
+	/** Byte size of the derivative. */
+	size: z.number().optional(),
+	/** The derivative's own pixel dimensions (differ from the original's for a width-bearing preset). */
+	width: z.number().optional(),
+	height: z.number().optional(),
+	/** Structural-similarity score vs. the original, 0–1, three decimals. See `server/compression/ssim.ts`. */
+	ssim: z.number().optional(),
+	/** The preset recipe this was generated from (e.g. `webp:q80`) — the staleness key. */
+	recipe: z.string(),
+	/** The original's byte size at generation time — detects an overwritten re-upload. */
+	source_size: z.number().optional(),
+	generated_at: z.string().optional(),
+	/** Set iff no file was produced; see {@link DerivedSkipReasonSchema}. */
+	skipped: DerivedSkipReasonSchema.optional()
+});
+export type DerivedEntry = z.infer<typeof DerivedEntrySchema>;
+
 /** One blob's manifest entry. `file_name` is canonical; `classes[]` is a derived membership index. */
 export const ManifestEntrySchema = z.object({
 	file_name: z.string().min(1),
@@ -34,7 +76,16 @@ export const ManifestEntrySchema = z.object({
 	created_at: z.string().optional(),
 	/** Intrinsic image dimensions, backfilled lazily on listing (best-effort; absent for non-images). */
 	width: z.number().optional(),
-	height: z.number().optional()
+	height: z.number().optional(),
+	/**
+	 * Generated compressed derivatives, keyed by preset id (Item 15).
+	 *
+	 * **This schema is a bare `z.object`, so zod *strips* anything not declared here** and every mutator
+	 * round-trips `readManifest() → parse → mutate → write`. A `derived` block that wasn't declared on
+	 * this schema would survive only until the next unrelated membership/rename/dimension write, then
+	 * vanish with no error. Same reason the reader's hand-rolled `parseManifest` whitelists it.
+	 */
+	derived: z.record(DerivedEntrySchema).optional()
 });
 export type ManifestEntry = z.infer<typeof ManifestEntrySchema>;
 
@@ -92,7 +143,17 @@ export async function mintFileId(fileName: string, size?: number): Promise<FileI
 	return await withFileLock(manifestLockPath(), async () => {
 		const manifest = await readManifest();
 		const existing = findIdByName(manifest, fileName);
-		if (existing) return existing as FileId;
+		if (existing) {
+			// An overwrite re-upload reuses the name: refresh `size` rather than returning early with the
+			// previous blob's byte count. Compression staleness compares `derived.source_size` against this,
+			// so a stale size here means a re-uploaded original never regenerates its derivative.
+			const entry = manifest.files[existing];
+			if (size != null && entry && entry.size !== size) {
+				manifest.files[existing] = { ...entry, size };
+				await writeJsonFileAtomic(getManifestPath(), manifest);
+			}
+			return existing as FileId;
+		}
 		const id = newFileId();
 		manifest.files[id] = {
 			file_name: fileName,
@@ -211,6 +272,131 @@ export async function setEntryDimensions(
 			changed = true;
 		}
 		if (changed) await writeJsonFileAtomic(getManifestPath(), manifest);
+	});
+}
+
+/**
+ * Persist lazily-stat'ed byte sizes onto manifest entries (the size counterpart of
+ * {@link setEntryDimensions}). Written only when something changed; unknown ids ignored.
+ *
+ * Use case:
+ * - `size` was historically written **only at mint**, so blobs adopted by {@link reconcile} (anything
+ *   hand-dropped into the blob dir) had no size at all — visible today as an empty `file:size` cell,
+ *   and fatal for the compression page's savings total, which sums original bytes.
+ *
+ * @param sizes - file_id → byte size measured on disk.
+ */
+export async function setEntrySizes(sizes: Map<string, number>): Promise<void> {
+	if (sizes.size === 0) return;
+	await withFileLock(manifestLockPath(), async () => {
+		const manifest = await readManifest();
+		let changed = false;
+		for (const [id, size] of sizes) {
+			const entry = manifest.files[id];
+			if (!entry || entry.size === size) continue;
+			manifest.files[id] = { ...entry, size };
+			changed = true;
+		}
+		if (changed) await writeJsonFileAtomic(getManifestPath(), manifest);
+	});
+}
+
+/**
+ * Write a batch of generated/skipped derivative results onto their blobs' entries, in **one** locked
+ * manifest write (Item 15).
+ *
+ * Use case:
+ * - The compression worker completes derivatives concurrently. Writing each result individually would
+ *   mean one full manifest rewrite *and* one lock acquisition per file — and since every grid read goes
+ *   through `listAllFiles → reconcile`, which takes the same lock, a 400-file backfill doing that would
+ *   start failing user requests once {@link withFileLock}'s ~4.3s retry budget runs out. So the worker
+ *   batches and calls this once per batch.
+ *
+ * @param results - file_id → (preset id → the derivative record to store).
+ *
+ * Concerns / future improvements:
+ * - Merges per preset, so a batch touching only `web` leaves a blob's other presets alone.
+ */
+export async function setDerivedEntries(
+	results: Map<string, Record<string, DerivedEntry>>
+): Promise<void> {
+	if (results.size === 0) return;
+	await withFileLock(manifestLockPath(), async () => {
+		const manifest = await readManifest();
+		let changed = false;
+		for (const [id, presets] of results) {
+			const entry = manifest.files[id];
+			if (!entry) continue;
+			manifest.files[id] = { ...entry, derived: { ...(entry.derived ?? {}), ...presets } };
+			changed = true;
+		}
+		if (changed) await writeJsonFileAtomic(getManifestPath(), manifest);
+	});
+}
+
+/**
+ * Drop derivative records from the manifest — one preset across every blob (a deleted preset), or every
+ * preset of one blob (a deleted/replaced original).
+ *
+ * @param opts.presetId - Remove this preset from every entry.
+ * @param opts.fileId - Remove every preset from this one entry.
+ * @returns The `{ fileId, presetId, file_name }` triples that were removed, so the caller can unlink the
+ *   corresponding files from disk.
+ */
+export async function removeDerivedEntries(opts: {
+	presetId?: string;
+	fileId?: string;
+}): Promise<{ fileId: string; presetId: string; file_name: string }[]> {
+	return await withFileLock(manifestLockPath(), async () => {
+		const manifest = await readManifest();
+		const removed: { fileId: string; presetId: string; file_name: string }[] = [];
+		let changed = false;
+		for (const [id, entry] of Object.entries(manifest.files)) {
+			if (opts.fileId && id !== opts.fileId) continue;
+			if (!entry.derived) continue;
+			const next: Record<string, DerivedEntry> = {};
+			for (const [pid, d] of Object.entries(entry.derived)) {
+				if (opts.presetId && pid !== opts.presetId) {
+					next[pid] = d;
+					continue;
+				}
+				if (d.file_name) removed.push({ fileId: id, presetId: pid, file_name: d.file_name });
+				changed = true;
+			}
+			if (Object.keys(next).length === Object.keys(entry.derived).length) continue;
+			manifest.files[id] = { ...entry, derived: Object.keys(next).length > 0 ? next : undefined };
+			changed = true;
+		}
+		if (changed) await writeJsonFileAtomic(getManifestPath(), manifest);
+		return removed;
+	});
+}
+
+/**
+ * Rename a blob's derivative files in the manifest (the bookkeeping half of a blob rename).
+ *
+ * @param fileId - The blob whose derivatives were renamed on disk.
+ * @param names - preset id → the derivative's new basename.
+ */
+export async function renameDerivedEntries(
+	fileId: string,
+	names: Map<string, string>
+): Promise<void> {
+	if (names.size === 0) return;
+	await withFileLock(manifestLockPath(), async () => {
+		const manifest = await readManifest();
+		const entry = manifest.files[fileId];
+		if (!entry?.derived) return;
+		const next: Record<string, DerivedEntry> = { ...entry.derived };
+		let changed = false;
+		for (const [pid, name] of names) {
+			if (!next[pid]) continue;
+			next[pid] = { ...next[pid], file_name: name };
+			changed = true;
+		}
+		if (!changed) return;
+		manifest.files[fileId] = { ...entry, derived: next };
+		await writeJsonFileAtomic(getManifestPath(), manifest);
 	});
 }
 
