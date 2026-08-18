@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
+import * as fssync from 'node:fs';
 import path from 'node:path';
 
-import { getDerivedDir, getDerivedRootDir } from './paths.js';
+import { getClassFilePath, getDerivedDir, getDerivedRootDir, listClassIds } from './paths.js';
 import { fileExtension } from '$lib/core/images.js';
 import {
 	recipeOf,
@@ -130,6 +131,38 @@ export function isStale(
 		existing.source_size != null &&
 		existing.source_size !== currentSourceSize
 	);
+}
+
+/**
+ * Every class's compression subscription, as `classId → preset ids` (Item 15 phase 2).
+ *
+ * Read straight off the class files (the source of truth for class config), in one pass, so the worker
+ * and the stats report can resolve the union for every blob without re-reading a class file per blob.
+ *
+ * @returns The map; classes with no subscription are simply absent.
+ *
+ * Concerns / future improvements:
+ * - Synchronous + uncached, matching `listClasses`. A workspace with hundreds of classes would want the
+ *   same mtime-gated caching the membership index uses, but the read is small and happens once per
+ *   backfill plan / stats call, not per blob.
+ */
+export function readClassPresetMap(): Map<string, string[]> {
+	const out = new Map<string, string[]>();
+	for (const id of listClassIds()) {
+		try {
+			const raw = JSON.parse(fssync.readFileSync(getClassFilePath(id), 'utf-8')) as {
+				config?: { compressionPresets?: unknown };
+			};
+			const presets = raw.config?.compressionPresets;
+			if (Array.isArray(presets)) {
+				const ids = presets.filter((p): p is string => typeof p === 'string');
+				if (ids.length > 0) out.set(id, ids);
+			}
+		} catch {
+			/* skip a corrupt/unreadable class file — it simply contributes no subscription */
+		}
+	}
+	return out;
 }
 
 /**

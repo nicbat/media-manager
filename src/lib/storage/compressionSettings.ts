@@ -145,16 +145,36 @@ export async function writeCompressionSettings(
 }
 
 /**
- * The presets that apply to a given blob — phase 1's union, which has exactly one subscriber.
+ * The presets that apply to a given blob — **the union rule**, and the whole reason this design works.
  *
- * @param settings - The workspace compression settings.
- * @returns The subscribed presets, in registry order.
+ * A blob's derivative set is the union of every subscription that reaches it: the workspace-wide
+ * subscription, plus the subscription of each class it belongs to. Because nothing *competes* — two
+ * classes asking for different recipes both get what they asked for — there is no tiebreak rule, which
+ * is precisely the trap the "what quality is this photo?" framing falls into.
  *
- * Concerns / future improvements:
- * - Phase 2 gives this a `classIds` argument and unions the per-class subscriptions in. Every caller
- *   already goes through this function precisely so that change lands in one place.
+ * Two consequences worth stating, because callers depend on both:
+ * - **Order is registry order**, not subscription order, so a blob's derivative set is deterministic
+ *   regardless of which class happened to ask first.
+ * - **Removing a blob from one class does not necessarily drop a derivative** — another subscriber may
+ *   still want it. Callers that prune must diff against this set, never against one class's list.
+ *
+ * @param settings - The workspace compression settings (registry + workspace subscription).
+ * @param classIds - The classes this blob belongs to (its manifest `classes[]`). Omit for the
+ *   workspace-only set.
+ * @param classPresets - classId → subscribed preset ids, from {@link readClassPresetMap}. Omit to
+ *   ignore per-class subscriptions entirely.
+ * @returns The subscribed presets, in registry order, deduplicated.
  */
-export function presetsForBlob(settings: CompressionSettings): CompressionPreset[] {
+export function presetsForBlob(
+	settings: CompressionSettings,
+	classIds?: readonly string[],
+	classPresets?: ReadonlyMap<string, string[]>
+): CompressionPreset[] {
 	const subscribed = new Set(settings.workspacePresets);
+	if (classIds && classPresets) {
+		for (const classId of classIds) {
+			for (const presetId of classPresets.get(classId) ?? []) subscribed.add(presetId);
+		}
+	}
 	return settings.presets.filter((p) => subscribed.has(p.id));
 }

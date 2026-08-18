@@ -557,3 +557,195 @@ describe('MediaManager — variants × static-assets baseUrl mode', () => {
 		expect(mm.file('f1')?.src).toBe('/media/Sunset.JPEG');
 	});
 });
+
+describe('MediaItem.srcset — the responsive ladder (Item 15 phase 2)', () => {
+	/**
+	 * A genuine multi-width ladder on f1: a 2000px original with 400/800/1600 derivatives, declared in
+	 * a deliberately NON-ascending preset order so the sort is actually exercised, plus two presets
+	 * that must contribute nothing — `icon` (generated but no width recorded) and `print` (skipped).
+	 */
+	function ladder(): ParsedWorkspace {
+		const f = fixture();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		files.f1.width = 2000;
+		files.f1.height = 1000;
+		files.f1.derived = {
+			web: { file_name: 'Sunset-800.webp', size: 4000, width: 800, height: 400 },
+			thumb: { file_name: 'Sunset-400.webp', size: 900, width: 400, height: 200 },
+			full: { file_name: 'Sunset-1600.webp', size: 9000, width: 1600, height: 800 },
+			icon: { file_name: 'Sunset-icon.webp', size: 120 }, // generated, but no width → unusable
+			print: { skipped: 'larger', recipe: 'webp:q90' } // never generated
+		};
+		return f;
+	}
+
+	/** The matching `derived` glob output for {@link ladder}. */
+	function ladderAssets(): Record<string, Record<string, string>> {
+		return {
+			web: { 'Sunset-800.webp': '/assets/s.800.webp' },
+			thumb: { 'Sunset-400.webp': '/assets/s.400.webp' },
+			full: { 'Sunset-1600.webp': '/assets/s.1600.webp' },
+			icon: { 'Sunset-icon.webp': '/assets/s.icon.webp' }
+		};
+	}
+
+	/** The ladder wired through a `derived` glob (bundler mode). */
+	function ladderMM() {
+		return MediaManager.fromParsed({ ...ladder(), derivedAssets: ladderAssets() });
+	}
+
+	it('emits width-bearing variants ascending, with the original appended', () => {
+		expect(ladderMM().file('f1')!.srcset()).toBe(
+			'/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/s.1600.webp 1600w, ' +
+				'/assets/sunset.hash.jpeg 2000w'
+		);
+	});
+
+	it('skips a variant with no usable width, and a skipped preset entirely', () => {
+		const out = ladderMM().file('f1')!.srcset();
+		expect(out).not.toContain('s.icon'); // width missing → no valid `w` descriptor
+		expect(out).not.toContain('print');
+		expect(out.split(', ')).toHaveLength(4);
+	});
+
+	it('suppresses the original with includeOriginal: false', () => {
+		expect(ladderMM().file('f1')!.srcset({ includeOriginal: false })).toBe(
+			'/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/s.1600.webp 1600w'
+		);
+	});
+
+	it('suppresses the original when a variant already occupies its width', () => {
+		const f = ladder();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		// `full` is now a same-size re-encode at the original's 2000px
+		(files.f1.derived as Record<string, Record<string, unknown>>).full.width = 2000;
+		(files.f1.derived as Record<string, Record<string, unknown>>).full.height = 1000;
+		const out = MediaManager.fromParsed({ ...f, derivedAssets: ladderAssets() })
+			.file('f1')!
+			.srcset();
+		expect(out).toBe('/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/s.1600.webp 2000w');
+		expect(out).not.toContain('sunset.hash.jpeg'); // the derivative owns 2000w
+	});
+
+	it('omits the original when the blob has no known width (never guesses)', () => {
+		const f = ladder();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		delete files.f1.width;
+		expect(
+			MediaManager.fromParsed({ ...f, derivedAssets: ladderAssets() })
+				.file('f1')!
+				.srcset()
+		).toBe('/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/s.1600.webp 1600w');
+	});
+
+	it('deduplicates by width, keeping the first candidate', () => {
+		const f = ladder();
+		const files = (f.manifest as { files: Record<string, Record<string, unknown>> }).files;
+		// a second 800px preset: `web` is declared first, so it wins the 800w slot
+		(files.f1.derived as Record<string, unknown>).webp2 = {
+			file_name: 'Sunset-800b.webp',
+			width: 800,
+			height: 400
+		};
+		const assets = ladderAssets();
+		assets.webp2 = { 'Sunset-800b.webp': '/assets/s.800b.webp' };
+		const out = MediaManager.fromParsed({ ...f, derivedAssets: assets })
+			.file('f1')!
+			.srcset({ includeOriginal: false });
+		expect(out).toBe('/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/s.1600.webp 1600w');
+		expect(out).not.toContain('s.800b');
+	});
+
+	it('restricts to `presets` but still sorts by width', () => {
+		// caller order is full-then-thumb; output must still be thumb-then-full
+		expect(
+			ladderMM()
+				.file('f1')!
+				.srcset({ presets: ['full', 'thumb'], includeOriginal: false })
+		).toBe('/assets/s.400.webp 400w, /assets/s.1600.webp 1600w');
+	});
+
+	it('silently ignores unknown preset ids', () => {
+		expect(
+			ladderMM()
+				.file('f1')!
+				.srcset({ presets: ['nope', 'thumb', 'print'], includeOriginal: false })
+		).toBe('/assets/s.400.webp 400w');
+	});
+
+	it('returns "" when no width-bearing variant survives (a lone original is not a ladder)', () => {
+		const mm = ladderMM();
+		// a blob with no derivatives at all, even though it has a src and a width
+		expect(MediaManager.fromParsed(fixture()).file('f1')!.srcset()).toBe('');
+		// no width, no src-worthy variants
+		expect(mm.file('f2')!.srcset()).toBe('');
+		// filtered down to nothing
+		expect(mm.file('f1')!.srcset({ presets: ['icon', 'print'] })).toBe('');
+		// and the empty value is genuinely empty — no stray space, no dangling comma
+		expect(mm.file('f2')!.srcset() || undefined).toBeUndefined();
+	});
+
+	it('exposes the same ladder through a class view', () => {
+		const fromClass = ladderMM()
+			.media('photos')
+			.find((m) => m.id === 'f1')!;
+		expect(fromClass.srcset({ includeOriginal: false })).toBe(
+			'/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/s.1600.webp 1600w'
+		);
+	});
+
+	it('works in static-assets baseUrl mode (derived/<preset>/ URLs)', () => {
+		const f = ladder();
+		delete f.assets;
+		const mm = MediaManager.fromParsed(f, { assets: { baseUrl: '/media' } });
+		expect(mm.file('f1')!.srcset()).toBe(
+			'/media/derived/thumb/Sunset-400.webp 400w, ' +
+				'/media/derived/web/Sunset-800.webp 800w, ' +
+				'/media/derived/full/Sunset-1600.webp 1600w, ' +
+				'/media/Sunset.JPEG 2000w'
+		);
+	});
+
+	it('works in baseUrl mode via MediaManager.load with no globs but `data`', () => {
+		const f = ladder();
+		delete f.assets;
+		const mm = MediaManager.load(
+			{ data: { '/x/media/manifest.json': f.manifest } },
+			{ assets: { baseUrl: '/media' } }
+		);
+		expect(mm.file('f1')!.srcset({ includeOriginal: false })).toBe(
+			'/media/derived/thumb/Sunset-400.webp 400w, ' +
+				'/media/derived/web/Sunset-800.webp 800w, ' +
+				'/media/derived/full/Sunset-1600.webp 1600w'
+		);
+	});
+});
+
+describe('MediaManager.load — `files` glob is optional (static-assets hosts)', () => {
+	it('typechecks and resolves every original from baseUrl with no `files` key at all', () => {
+		// The exact shape a static-assets host passes: `data` only, blobs served from /media.
+		const mm = MediaManager.load(
+			{ data: { '/x/media/manifest.json': fixture().manifest } },
+			{ assets: { baseUrl: '/media' } }
+		);
+		expect(mm.file('f1')?.src).toBe('/media/Sunset.JPEG');
+		expect(mm.file('f1')?.missing).toBe(false);
+		expect(mm.file('f2')?.src).toBe('/media/doc.pdf');
+		expect(mm.file('f2')?.missing).toBe(false);
+		expect(mm.media().length).toBe(3);
+	});
+
+	it('REGRESSION: a `files` glob still wins over baseUrl when present', () => {
+		const mm = MediaManager.load(
+			{
+				data: { '/x/media/manifest.json': fixture().manifest },
+				files: { '/x/media/files/Sunset.JPEG': '/assets/sunset.hash.jpeg' }
+			},
+			{ assets: { baseUrl: '/media' } }
+		);
+		expect(mm.file('f1')?.src).toBe('/assets/sunset.hash.jpeg');
+		// and the gate is index-wide: a blob absent from the glob is NOT backfilled from baseUrl
+		expect(mm.file('f2')?.src).toBeNull();
+		expect(mm.file('f2')?.missing).toBe(true);
+	});
+});

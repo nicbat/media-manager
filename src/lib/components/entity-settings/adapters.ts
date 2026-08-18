@@ -38,8 +38,9 @@ function classFields(schema: SchemaDefinition): { key: string; label: string }[]
 
 /**
  * Entity-settings adapter for a Files **class** (`/api/classes/[id]`). General tab persists
- * `displayName`, `displayField` (title-by), and `gridGroupByField` (group-by); Fields tab drives the
- * class schema; Danger tab deletes the class.
+ * `displayName`, `displayField` (title-by), `gridGroupByField` (group-by), and the class's
+ * `compressionPresets` **subscription** (Item 15 phase 2); Fields tab drives the class schema; Danger
+ * tab deletes the class.
  */
 export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 	return {
@@ -47,6 +48,8 @@ export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 		recordNoun: 'record',
 		hasGroupBy: true,
 		hasSubtitle: false,
+		// Classes own blobs, so they're the one entity that can subscribe to compression presets.
+		hasCompression: true,
 		load: async () => {
 			const detail = await apiGetClass(classId);
 			return {
@@ -55,16 +58,20 @@ export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 				titleBy: detail.config.displayField ?? '',
 				subtitleBy: '',
 				groupBy: detail.config.gridGroupByField ?? '',
+				compressionPresets: detail.config.compressionPresets ?? [],
 				fields: classFields(detail.schema)
 			};
 		},
-		save: async ({ displayName, icon, titleBy, groupBy }) => {
+		save: async ({ displayName, icon, titleBy, groupBy, compressionPresets }) => {
 			await apiUpdateClassConfig(classId, {
 				displayName,
 				// '' is sent verbatim to clear (it resolves to the generic fallback when rendered).
 				icon,
 				displayField: titleBy || undefined,
-				gridGroupByField: groupBy || undefined
+				gridGroupByField: groupBy || undefined,
+				// Always sent (an empty array is how the server clears the subscription). Saving it makes
+				// the server regenerate/prune this class's members in the background — never a prompt.
+				compressionPresets
 			});
 		},
 		schema: {
@@ -105,6 +112,8 @@ export function typeSettingsAdapter(typeId: string): EntitySettingsAdapter {
 		recordNoun: 'record',
 		hasGroupBy: false,
 		hasSubtitle: true,
+		// A record type holds no blobs, so there is nothing for a compression preset to act on.
+		hasCompression: false,
 		load: async () => {
 			const [settings, schema] = await Promise.all([
 				apiGetTypeSettings(typeId),
@@ -116,6 +125,7 @@ export function typeSettingsAdapter(typeId: string): EntitySettingsAdapter {
 				titleBy: settings.displayField,
 				subtitleBy: settings.subtitleField,
 				groupBy: '',
+				compressionPresets: [],
 				fields: typeFields(schema)
 			};
 		},
@@ -157,6 +167,8 @@ export function postsSettingsAdapter(collection: string): EntitySettingsAdapter 
 		recordNoun: 'post',
 		hasGroupBy: false,
 		hasSubtitle: false,
+		// Posts are markdown documents, not blobs — nothing here to compress.
+		hasCompression: false,
 		load: async () => {
 			const detail = await apiGetPostCollection(collection);
 			return {
@@ -165,6 +177,7 @@ export function postsSettingsAdapter(collection: string): EntitySettingsAdapter 
 				titleBy: detail.displayField ?? '',
 				subtitleBy: '',
 				groupBy: '',
+				compressionPresets: [],
 				fields: Object.keys(detail.schema).map((k) => ({ key: k, label: fieldLabel(k) }))
 			};
 		},

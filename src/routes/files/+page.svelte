@@ -24,6 +24,7 @@
 	import { OPERATORS } from '$lib/core/filters.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
 	import { formatBytes } from '$lib/core/bytes.js';
+	import { ssimLabel } from '$lib/api/compression.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import BulkSetFieldDialog from '$lib/components/BulkSetFieldDialog.svelte';
 	import EntityRail from '$lib/components/rail/EntityRail.svelte';
@@ -240,17 +241,22 @@
 		if (key === 'last_modified') return 'Last modified';
 		if (key === 'created_at') return 'Date added';
 		if (key === 'size') return 'Size';
+		// Compression pair (Item 15 phase 2): biggest wins first / worst-scoring derivative first.
+		if (key === 'saved') return 'Bytes saved';
+		if (key === 'quality') return 'Compression quality';
 		return fieldLabel(key);
 	}
 
 	/**
 	 * Sort options for the active view (Item 9): a solo class catalog offers the per-record keys + its
-	 * schema fields; the All Files / multi-class views offer only intrinsic blob keys.
+	 * schema fields; the All Files / multi-class views offer only intrinsic blob keys. `saved`/`quality`
+	 * are intrinsic too (they describe the blob's derivatives, not any class's record), so they're
+	 * offered everywhere; blobs with no derivative sort last rather than as a zero.
 	 */
 	const sortOptions = $derived.by(() => {
 		const builtins = soloClass
-			? ['name', 'last_modified', 'created_at', 'size']
-			: ['name', 'created_at', 'size'];
+			? ['name', 'last_modified', 'created_at', 'size', 'saved', 'quality']
+			: ['name', 'created_at', 'size', 'saved', 'quality'];
 		const fields = soloClass ? catalogSchemaKeys : [];
 		return [...builtins, ...fields].map((k) => ({ value: k, label: sortLabel(k) }));
 	});
@@ -267,7 +273,11 @@
 		{ key: `${FILE_INFO_PREFIX}size`, label: 'Size' },
 		{ key: `${FILE_INFO_PREFIX}dimensions`, label: 'Dimensions' },
 		{ key: `${FILE_INFO_PREFIX}type`, label: 'Type' },
-		{ key: `${FILE_INFO_PREFIX}created`, label: 'Date added' }
+		{ key: `${FILE_INFO_PREFIX}created`, label: 'Date added' },
+		// Compression (Item 15 phase 2) — read off `FileItem.compression`, absent for an uncompressed blob.
+		{ key: `${FILE_INFO_PREFIX}saved`, label: 'Saved' },
+		{ key: `${FILE_INFO_PREFIX}quality`, label: 'Quality' },
+		{ key: `${FILE_INFO_PREFIX}presets`, label: 'Presets' }
 	];
 
 	/**
@@ -300,6 +310,24 @@
 			return dot > 0 ? f.file_name.slice(dot + 1).toUpperCase() : '';
 		}
 		if (k === 'created') return f.created_at ? new Date(f.created_at).toLocaleDateString() : '';
+		// Compression (Item 15 phase 2). A blob with no derivative has no `compression` at all, and every
+		// one of these returns '' for it — a "0 B" or "—" would read as a measured result rather than as
+		// "this file was never compressed".
+		if (k === 'saved') {
+			if (!f.compression) return '';
+			// Cap at 99%: a derivative that still exists never saved *all* the bytes, and a rounded
+			// "100%" claims it did.
+			const pct = Math.min(99, Math.round(f.compression.savedPct));
+			return `${formatBytes(f.compression.savedBytes)}${pct > 0 ? ` (${pct}%)` : ''}`;
+		}
+		if (k === 'quality') {
+			// The **lowest** score across this blob's derivatives — the worst thing actually being served.
+			const ssim = f.compression?.ssim;
+			if (ssim == null) return '';
+			const label = ssimLabel(ssim);
+			return label ? `${ssim.toFixed(3)} · ${label}` : ssim.toFixed(3);
+		}
+		if (k === 'presets') return f.compression?.presets.join(', ') ?? '';
 		return '';
 	}
 

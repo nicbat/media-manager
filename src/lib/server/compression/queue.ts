@@ -1,14 +1,25 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 
 import { getDerivedDir } from '$lib/storage/paths.js';
-import { readManifest, setDerivedEntries, type DerivedEntry } from '$lib/storage/manifest.js';
+import {
+	readManifest,
+	removeDerivedEntries,
+	setDerivedEntries,
+	type DerivedEntry
+} from '$lib/storage/manifest.js';
 import {
 	presetsForBlob,
 	readCompressionSettings,
 	type CompressionPreset
 } from '$lib/storage/compressionSettings.js';
-import { isCompressibleFilename, isStale, resolveDerivedName } from '$lib/storage/derived.js';
+import {
+	isCompressibleFilename,
+	isStale,
+	readClassPresetMap,
+	resolveDerivedName
+} from '$lib/storage/derived.js';
 import { generateDerivative } from './generate.js';
 
 /**
@@ -185,8 +196,17 @@ export async function waitForIdle(): Promise<void> {
  */
 async function planWork(target: Set<string> | 'all'): Promise<WorkItem[]> {
 	const settings = readCompressionSettings();
-	const presets = presetsForBlob(settings);
-	if (presets.length === 0) return [];
+	// Every preset any subscriber could ask for. The per-blob set is narrower (the union of the workspace
+	// subscription and this blob's classes) and is resolved inside the loop.
+	const classPresets = readClassPresetMap();
+	const subscribedAnywhere = new Set(settings.workspacePresets);
+	for (const ids of classPresets.values()) for (const id of ids) subscribedAnywhere.add(id);
+	const presets = settings.presets.filter((p) => subscribedAnywhere.has(p.id));
+	if (presets.length === 0) {
+		// Nothing is subscribed anywhere, so every stored derivative is now unwanted.
+		await pruneUnsubscribed(new Map(), target);
+		return [];
+	}
 
 	const manifest = await readManifest();
 	// name → owning fileId, per preset: existing claims win, so a regeneration keeps its own name.
@@ -197,6 +217,15 @@ async function planWork(target: Set<string> | 'all'): Promise<WorkItem[]> {
 			if (d.file_name) claimed.get(presetId)?.set(d.file_name, id);
 		}
 	}
+
+	// fileId → the presets that blob is actually subscribed to (the union rule).
+	const wanted = new Map<string, CompressionPreset[]>();
+	for (const [fileId, entry] of Object.entries(manifest.files)) {
+		wanted.set(fileId, presetsForBlob(settings, entry.classes, classPresets));
+	}
+	// A blob that left a class may now hold derivatives nobody wants. Diff against the *union*, never
+	// against one class's list — another class may still be subscribed to the same preset.
+	await pruneUnsubscribed(wanted, target);
 
 	// What's actually on disk per preset, so a record whose file has gone is planned as work.
 	// `isStale` deliberately compares only the manifest record (recipe + source size), which makes it
@@ -214,7 +243,7 @@ async function planWork(target: Set<string> | 'all'): Promise<WorkItem[]> {
 	for (const [fileId, entry] of Object.entries(manifest.files)) {
 		if (target !== 'all' && !target.has(fileId)) continue;
 		if (entry.missing) continue;
-		for (const preset of presets) {
+		for (const preset of wanted.get(fileId) ?? []) {
 			const existing = entry.derived?.[preset.id];
 			const fileGone = !!existing?.file_name && !present.get(preset.id)!.has(existing.file_name);
 			if (!fileGone && !isStale(existing, preset, entry.size)) continue;
@@ -233,6 +262,43 @@ async function planWork(target: Set<string> | 'all'): Promise<WorkItem[]> {
 		}
 	}
 	return work;
+}
+
+/**
+ * Remove derivatives no subscriber wants any more (Item 15 phase 2) — from the manifest and from disk.
+ *
+ * This is the other half of the union rule, and the easy thing to get wrong. When a blob leaves a class
+ * its derivative set can shrink, but only if **no remaining** subscriber wants that preset: dropping a
+ * derivative because one class stopped asking, while another still needs it, is the exact bug the union
+ * exists to prevent. So the diff is always against the fully-resolved per-blob set.
+ *
+ * @param wanted - fileId → the presets that blob is subscribed to. A blob absent from the map is treated
+ *   as wanting nothing (that is how "no preset is subscribed anywhere" reaches here).
+ * @param target - Restricts the pass to the blobs being planned, so an id-scoped schedule after a
+ *   membership change doesn't walk the whole workspace.
+ *
+ * Concerns / future improvements:
+ * - Runs before generation so the freed names are available to {@link resolveDerivedName} in the same
+ *   plan; the removal is its own manifest write, which is fine because it happens once per drain.
+ */
+async function pruneUnsubscribed(
+	wanted: ReadonlyMap<string, CompressionPreset[]>,
+	target: Set<string> | 'all'
+): Promise<void> {
+	const manifest = await readManifest();
+	for (const [fileId, entry] of Object.entries(manifest.files)) {
+		if (target !== 'all' && !target.has(fileId)) continue;
+		const stored = Object.keys(entry.derived ?? {});
+		if (stored.length === 0) continue;
+		const keep = new Set((wanted.get(fileId) ?? []).map((p) => p.id));
+		for (const presetId of stored) {
+			if (keep.has(presetId)) continue;
+			const removed = await removeDerivedEntries({ fileId, presetId });
+			for (const r of removed) {
+				await fs.unlink(path.join(getDerivedDir(r.presetId), r.file_name)).catch(() => {});
+			}
+		}
+	}
 }
 
 /**

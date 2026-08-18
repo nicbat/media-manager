@@ -15,6 +15,14 @@ export interface EntityGeneralConfig {
 	subtitleBy: string;
 	/** Persisted "group by" field key ('' = none). Only meaningful when {@link EntitySettingsAdapter.hasGroupBy}. */
 	groupBy: string;
+	/**
+	 * Compression preset ids this entity **subscribes** to (Item 15 phase 2). Only meaningful when
+	 * {@link EntitySettingsAdapter.hasCompression} (classes have blobs; record types don't).
+	 *
+	 * A subscription, never a setting: a blob's derivative set is the *union* of the workspace-wide
+	 * subscription and every class it belongs to, so this list only ever *adds*.
+	 */
+	compressionPresets: string[];
 	fields: { key: string; label: string }[];
 }
 
@@ -30,8 +38,12 @@ export interface EntityGeneralConfig {
  *   Records keeps group-by as an ephemeral header control).
  * @param hasSubtitle - When true the General tab shows a persisted "subtitle by" select (Records only;
  *   the records list rows are text-first and can carry a secondary line).
- * @param load - Read current general config (name + icon + title-by + subtitle-by + group-by + eligible fields).
- * @param save - Persist the general config (display name, icon, title-by, subtitle-by, group-by).
+ * @param hasCompression - When true the General tab shows the **compression subscription** checkbox
+ *   list (Files classes only — a record type has no blobs to compress).
+ * @param load - Read current general config (name + icon + title-by + subtitle-by + group-by +
+ *   compression subscription + eligible fields).
+ * @param save - Persist the general config (display name, icon, title-by, subtitle-by, group-by,
+ *   compression subscription). Adapters without a capability simply ignore that key.
  * @param schema - Data layer for the Fields tab (the shared {@link SchemaEditorBody}).
  * @param remove - Delete the entity.
  */
@@ -40,6 +52,7 @@ export interface EntitySettingsAdapter {
 	recordNoun: string;
 	hasGroupBy: boolean;
 	hasSubtitle: boolean;
+	hasCompression: boolean;
 	load: () => Promise<EntityGeneralConfig>;
 	save: (patch: {
 		displayName: string;
@@ -47,6 +60,7 @@ export interface EntitySettingsAdapter {
 		titleBy: string;
 		subtitleBy: string;
 		groupBy: string;
+		compressionPresets: string[];
 	}) => Promise<void>;
 	schema: SchemaEditorAdapter;
 	remove: () => Promise<void>;

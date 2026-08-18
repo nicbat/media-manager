@@ -104,8 +104,18 @@ export interface ParsedWorkspace {
 export interface WorkspaceGlobs {
 	/** `import.meta.glob('<root>/**\/*.json', { eager: true, import: 'default' })` — parsed JSON by path. */
 	data: Record<string, unknown>;
-	/** `import.meta.glob('<root>/media/files/*', { eager: true, query: '?url', import: 'default' })`. */
-	files: Record<string, unknown>;
+	/**
+	 * `import.meta.glob('<root>/media/files/*', { eager: true, query: '?url', import: 'default' })` —
+	 * the blobs themselves, bundled and hashed by the host's bundler.
+	 *
+	 * **Optional, and omitted on purpose in static-assets mode.** Leaving it out is exactly what arms
+	 * `options.assets.baseUrl` synthesis: the reader only manufactures `` `${baseUrl}/<file_name>` ``
+	 * URLs when the asset index came out empty, so a host serving blobs from a CDN / static folder
+	 * passes `{ data }` alone and never bundles a single blob (the fix for size-capped serverless
+	 * functions). Pass it and it wins — a `files` glob always beats `baseUrl`. {@link derived} is
+	 * optional for the same reason, gated independently.
+	 */
+	files?: Record<string, unknown>;
 	/** `import.meta.glob('<root>/posts/**\/*.md', { eager: true, query: '?raw', import: 'default' })` — Item 14. */
 	posts?: Record<string, unknown>;
 	/**

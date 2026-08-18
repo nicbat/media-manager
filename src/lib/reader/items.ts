@@ -53,6 +53,51 @@ export interface VariantInfo {
 	ssim: number | null;
 }
 
+/**
+ * Options for {@link MediaItem.srcset} — which rungs of the ladder to offer the browser.
+ *
+ * Both fields are optional and the defaults ("every width-bearing preset, plus the original") are the
+ * right answer for a plain responsive `<img>`; reach for these only when the render site knows
+ * something the reader can't, e.g. a card grid that never wants the 4000px original in the candidate
+ * list.
+ */
+export interface SrcsetOptions {
+	/**
+	 * Restrict the candidates to these preset ids. Unknown ids are silently ignored (a host shouldn't
+	 * have to know which presets a given workspace was configured with). Order expresses the caller's
+	 * intent for **dedup ties only** — the emitted list is always sorted ascending by width, because
+	 * that's what the `srcset` grammar is for.
+	 */
+	presets?: string[];
+	/**
+	 * Append the original blob as its own candidate at `item.width`. Default **`true`**: without it a
+	 * browser on a large viewport is capped at the largest derivative, which is usually wrong for a
+	 * lightbox or a full-bleed hero. Set `false` when the derivatives *are* the ceiling on purpose.
+	 */
+	includeOriginal?: boolean;
+}
+
+/**
+ * Narrow a raw pixel width into a value usable as a `srcset` `w` descriptor, or `null` when there
+ * isn't one.
+ *
+ * The `w` descriptor grammar takes a positive integer, so a missing (`0`), negative, or non-finite
+ * width has no valid rendering — such a candidate is dropped rather than emitted as a broken
+ * descriptor that would poison the whole attribute (browsers discard a malformed candidate list, not
+ * just the bad entry).
+ *
+ * @param raw - A width in pixels as carried by a {@link VariantInfo} or a {@link MediaItem}.
+ * @returns The rounded positive width, or `null` when the width is unusable.
+ *
+ * Concerns / future improvements: widths are rounded because the manifest's dimensions are integers in
+ * practice but the type is `number`; rounding keeps the descriptor grammar-valid rather than emitting
+ * `400.5w`.
+ */
+function candidateWidth(raw: number): number | null {
+	if (!Number.isFinite(raw) || raw <= 0) return null;
+	return Math.round(raw);
+}
+
 /** Intrinsic keys a {@link MediaItem} resolves from blob metadata (not class fields). */
 const MEDIA_INTRINSICS = new Set([
 	'id',
@@ -195,6 +240,73 @@ export class MediaItem implements FieldAccessible {
 	 */
 	variant(preset: string): string | null {
 		return this.variants.get(preset)?.src ?? null;
+	}
+
+	/**
+	 * A ready-to-render **`srcset`** string over this blob's width-bearing variants (Item 15 phase 2) —
+	 * `` `<url> <width>w, …` `` — so the *browser* picks the rung that fits its viewport and DPR. This is
+	 * the whole point of a responsive ladder: the reader states what each candidate **is**, and the
+	 * browser decides what to fetch.
+	 *
+	 * Use case: `<img srcset={item.srcset() || undefined} sizes="(max-width: 700px) 100vw, 33vw"
+	 * src={item.src} alt="" />`. Note the division of labour — the reader emits `w` descriptors, which
+	 * are a fact about each file, and **never invents `sizes`**, which is a statement about *your*
+	 * layout and only you can know it. Without a `sizes` attribute a browser assumes `100vw` and will
+	 * happily over-fetch, so pass one.
+	 *
+	 * What ends up in the list:
+	 * - **Only width-bearing variants.** A `w` descriptor must state the candidate's real rendered
+	 *   width, so a variant whose width is missing or `0` (a same-size re-encode the editor didn't
+	 *   measure, a non-image derivative) is **skipped** rather than emitted as a broken descriptor —
+	 *   browsers throw out a malformed candidate list wholesale, not just the bad entry.
+	 * - **Ascending by width, deduplicated by width.** Two candidates sharing a width make the list
+	 *   ambiguous (the browser's choice between them is arbitrary), so the **first** one wins — first in
+	 *   `presets` order when you passed one, else in the workspace's own preset order.
+	 * - **The original last**, at `this.width`, unless `includeOriginal: false` or a variant already
+	 *   occupies that width. Skipped entirely when the blob has no known width: a guessed descriptor is
+	 *   worse than a missing candidate.
+	 *
+	 * @param options - See {@link SrcsetOptions}: `presets` to restrict the candidates, `includeOriginal`
+	 *   (default `true`) to append the original.
+	 * @returns A `srcset` value, or **`''`** when there is no ladder to offer — no width-bearing variant
+	 *   survived the filters. `''` is the deliberate "nothing to say" signal, and it is genuinely empty
+	 *   (no stray space, no dangling comma), so `srcset={item.srcset() || undefined}` omits the attribute
+	 *   entirely instead of rendering `srcset=""`.
+	 *
+	 * Concerns / future improvements: a lone original is **not** a ladder — with zero usable variants
+	 * this returns `''` even when `includeOriginal` is on, because `<img srcset="x.jpg 2000w">` says
+	 * nothing that `src` didn't already say. Only `w` descriptors are emitted, never `x` (DPR)
+	 * descriptors: the two forms can't be mixed in one attribute, and `w` + `sizes` subsumes `x` for
+	 * layout-driven images. A candidate URL containing a literal `,` would break the `srcset` grammar;
+	 * bundler-hashed and percent-encoded URLs never do, but a static-assets host running `encode: false`
+	 * over comma-bearing filenames could — encode, or rename the file.
+	 */
+	srcset(options?: SrcsetOptions): string {
+		const ordered: VariantInfo[] = options?.presets
+			? options.presets
+					.map((preset) => this.variants.get(preset))
+					.filter((v): v is VariantInfo => v != null)
+			: [...this.variants.values()];
+
+		// Keyed by width so a duplicate width can't produce an ambiguous candidate; first writer wins.
+		const byWidth = new Map<number, string>();
+		for (const v of ordered) {
+			const w = candidateWidth(v.width);
+			if (w == null || byWidth.has(w)) continue;
+			byWidth.set(w, v.src);
+		}
+		// No usable derivative ⇒ no ladder, so nothing to say even if the original would qualify.
+		if (byWidth.size === 0) return '';
+
+		if ((options?.includeOriginal ?? true) && this.src) {
+			const w = candidateWidth(this.width);
+			if (w != null && !byWidth.has(w)) byWidth.set(w, this.src);
+		}
+
+		return [...byWidth.entries()]
+			.sort((a, b) => a[0] - b[0])
+			.map(([w, src]) => `${src} ${w}w`)
+			.join(', ');
 	}
 
 	/**

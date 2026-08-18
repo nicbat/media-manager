@@ -12,8 +12,11 @@
 	import {
 		apiSaveCompressionSettings,
 		presetLabel,
+		presetRecipe,
 		MAX_QUALITY,
 		MIN_QUALITY,
+		MAX_WIDTH,
+		MIN_WIDTH,
 		PRESET_ID_PATTERN,
 		type CompressionFormat,
 		type CompressionPreset,
@@ -24,10 +27,14 @@
 	 * The **compression presets** editor — the one place a workspace's recipes are defined.
 	 *
 	 * The load-bearing idea of Item 15 is that *quality belongs to the recipe, not the photo*: a preset
-	 * is the unit and things subscribe to it. Phase 1 ships exactly one subscription — the workspace
-	 * one ("applied to every image") — so this dialog edits the registry plus that single checkbox
-	 * column. Per-class subscription and the `width` ladder are phase 2; `width` is rendered but
-	 * **disabled**, so the field's existence is visible without being offered.
+	 * is the unit and things subscribe to it. This dialog edits the registry plus the **workspace-wide**
+	 * subscription ("applied to every image"); the per-class subscriptions that stack on top of it are
+	 * edited in each class's settings dialog, because that's where you already are when you decide a
+	 * class needs thumbnails.
+	 *
+	 * A preset's **width** (phase 2) is a first-class part of the recipe, not a modifier of it: a preset
+	 * with a width produces a *different size*, so each row spells its recipe out in words underneath
+	 * rather than leaving `400` sitting in a box whose consequence you have to infer.
 	 *
 	 * Unlike the entity editors this dialog is **not** autosaved: preset edits mark derivatives stale
 	 * and cost real encode work, so they are batched behind an explicit Save. Saving is still never a
@@ -63,6 +70,8 @@
 	let newLabel = $state('');
 	let newFormat = $state<CompressionFormat>('webp');
 	let newQuality = $state(80);
+	/** `undefined` ⇒ full size (a same-dimension twin); a number ⇒ downscale to that width. */
+	let newWidth = $state<number | undefined>(undefined);
 
 	/** Preset pending deletion, held while its confirmation dialog is open. */
 	let deleteTarget = $state<CompressionPreset | null>(null);
@@ -82,6 +91,7 @@
 		newLabel = '';
 		newFormat = 'webp';
 		newQuality = 80;
+		newWidth = undefined;
 	});
 
 	/** Is this preset applied to every image (i.e. subscribed at workspace scope)? */
@@ -109,6 +119,32 @@
 	}
 
 	/**
+	 * Parse a typed width into the server's accepted range, or `undefined` for "full size".
+	 *
+	 * Empty is the *meaningful* value here, not a validation failure: a preset with no width produces a
+	 * same-dimension twin of the original. Anything that isn't a positive integer collapses to that same
+	 * `undefined`, so a half-typed or nonsense entry can never be saved as a bogus resize — and because
+	 * the input is controlled, the junk visibly snaps back to empty instead of lingering.
+	 *
+	 * @param raw - The raw input value.
+	 * @returns A width in `[MIN_WIDTH, MAX_WIDTH]`, or `undefined` for full size.
+	 */
+	function parseWidth(raw: string): number | undefined {
+		const trimmed = raw.trim();
+		if (trimmed === '') return undefined;
+		const n = Math.round(Number(trimmed));
+		if (!Number.isFinite(n) || n < MIN_WIDTH) return undefined;
+		return Math.min(MAX_WIDTH, n);
+	}
+
+	/** One sentence spelling out what a recipe *does*, so a width isn't just a number in a box. */
+	function recipeSentence(preset: CompressionPreset): string {
+		return preset.width
+			? `${presetRecipe(preset)} — downscaled to ${preset.width}px wide, aspect preserved, never upscaled.`
+			: `${presetRecipe(preset)} — same dimensions as the original.`;
+	}
+
+	/**
 	 * Validate and append the new-preset form. The id is a directory name, so it is checked against
 	 * the same pattern the server enforces, and duplicates are rejected before the round trip.
 	 */
@@ -125,12 +161,19 @@
 		const label = newLabel.trim();
 		presets = [
 			...presets,
-			{ id, format: newFormat, quality: newQuality, ...(label ? { label } : {}) }
+			{
+				id,
+				format: newFormat,
+				quality: newQuality,
+				...(label ? { label } : {}),
+				...(newWidth ? { width: newWidth } : {})
+			}
 		];
 		workspacePresets = [...workspacePresets, id];
 		adding = false;
 		newId = '';
 		newLabel = '';
+		newWidth = undefined;
 	}
 
 	/** Drop the confirmed preset locally; its derivatives are reclaimed server-side on save. */
@@ -174,8 +217,10 @@
 	<Dialog.Content class="flex max-h-[90vh] max-w-3xl flex-col">
 		<Dialog.Title>Compression presets</Dialog.Title>
 		<Dialog.Description>
-			A preset is a recipe — a format and a quality. Images subscribe to presets; nothing competes,
-			so a file simply gets one derivative per preset applied to it.
+			A preset is a recipe — a format, a quality, and optionally a width. Leave the width empty for
+			a full-size copy; set one and the preset becomes a <em>different size</em>, downscaled to fit.
+			Images subscribe to presets; nothing competes, so a file simply gets one derivative per preset
+			applied to it.
 		</Dialog.Description>
 
 		<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-2">
@@ -257,10 +302,14 @@
 									<Label for="preset-width-{preset.id}">Width</Label>
 									<Input
 										id="preset-width-{preset.id}"
+										type="number"
+										min={MIN_WIDTH}
+										max={MAX_WIDTH}
 										value={preset.width ?? ''}
 										placeholder="full size"
-										disabled
-										title="Resizing arrives in phase 2 — presets currently keep the original dimensions"
+										title="Leave empty for a full-size copy, or set a pixel width to downscale (aspect preserved, never upscaled)"
+										oninput={(e) =>
+											updatePreset(preset.id, { width: parseWidth(e.currentTarget.value) })}
 									/>
 								</div>
 								<Button
@@ -274,7 +323,9 @@
 								</Button>
 							</div>
 
-							<div class="flex items-center gap-2">
+							<p class="text-xs text-muted-foreground">{recipeSentence(preset)}</p>
+
+							<div class="flex flex-wrap items-center gap-2">
 								<Checkbox
 									id="preset-sub-{preset.id}"
 									checked={isSubscribed(preset.id)}
@@ -284,7 +335,7 @@
 									Applied to every image
 								</Label>
 								<span class="text-xs text-muted-foreground">
-									Width is fixed at full size until phase 2.
+									Individual classes can subscribe to it as well, in their own settings.
 								</span>
 							</div>
 						</div>
@@ -340,8 +391,29 @@
 							oninput={(e) => (newQuality = clampQuality(e.currentTarget.value))}
 						/>
 					</div>
+					<div class="flex w-28 flex-col gap-1.5">
+						<Label for="new-preset-width">Width</Label>
+						<Input
+							id="new-preset-width"
+							type="number"
+							min={MIN_WIDTH}
+							max={MAX_WIDTH}
+							value={newWidth ?? ''}
+							placeholder="full size"
+							title="Leave empty for a full-size copy, or set a pixel width to downscale"
+							oninput={(e) => (newWidth = parseWidth(e.currentTarget.value))}
+						/>
+					</div>
 					<Button size="sm" onclick={addPreset}>Add</Button>
 					<Button size="sm" variant="ghost" onclick={() => (adding = false)}>Cancel</Button>
+					<p class="basis-full text-xs text-muted-foreground">
+						{recipeSentence({
+							id: newId || 'new',
+							format: newFormat,
+							quality: newQuality,
+							...(newWidth ? { width: newWidth } : {})
+						})}
+					</p>
 				</div>
 			{:else}
 				<div>
@@ -354,8 +426,8 @@
 
 		<Dialog.Footer>
 			<p class="mr-auto max-w-sm text-left text-xs text-muted-foreground">
-				Changing a quality marks that preset's existing derivatives stale; they are regenerated
-				automatically after saving. Your originals are never touched.
+				Changing a quality or a width marks that preset's existing derivatives stale; they are
+				regenerated automatically after saving. Your originals are never touched.
 			</p>
 			<Button variant="ghost" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
 			<Button disabled={saving} onclick={save}>

@@ -11,6 +11,15 @@
 		type ExtensionCheck
 	} from '$lib/api/files.js';
 	import { hasAllowedImageExtension, isPdfFilename } from '$lib/core/images.js';
+	import {
+		apiGetFileCompression,
+		formatBytes,
+		humanizeRecipe,
+		mayHaveDerivatives,
+		ssimLabel,
+		type FileCompressionDetail,
+		type FilePresetCompression
+	} from '$lib/api/compression.js';
 	import { formatTimestamp } from '$lib/core/datetime.js';
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
@@ -19,7 +28,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { FileText, Loader2, Check } from 'lucide-svelte';
+	import { FileText, Loader2, Check, ChevronDown, ChevronRight } from 'lucide-svelte';
 	import type { ClassSummary, FileItem, SchemaDefinition, ClassConfig } from '$lib/core/types.js';
 
 	/** One editable class section: schema/config plus the blob's (always-present) record. */
@@ -89,6 +98,13 @@
 	/** Per-section serialized snapshot at last save/load, to detect unsaved edits. */
 	let savedSnapshots = $state<Record<string, string>>({});
 
+	// --- Compression (Item 15 phase 2) — read-only reporting, deliberately outside the autosave loop.
+	/** This blob's per-preset compression detail; `null` until loaded (or when never fetched). */
+	let compression = $state<FileCompressionDetail | null>(null);
+	let compressionLoading = $state(false);
+	/** The section is collapsible; its header keeps the one-line summary visible when collapsed. */
+	let compressionOpen = $state(true);
+
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
 	const isImage = $derived(hasAllowedImageExtension(file.file_name));
@@ -124,6 +140,75 @@
 		} finally {
 			loading = false;
 		}
+		// Membership decides which presets this blob is subscribed to, so the compression detail is
+		// reloaded alongside the sections (open, refresh, add/remove-to-class) rather than once per file.
+		void loadCompression(file.id);
+	}
+
+	/**
+	 * Fetch this blob's per-preset compression detail, unless its type could never have a derivative.
+	 *
+	 * @param fid - The blob id being loaded, captured so a fast file switch can't land a stale response
+	 *   on the newly-opened file.
+	 */
+	async function loadCompression(fid: string) {
+		if (!mayHaveDerivatives(file.file_name)) {
+			compression = null;
+			return;
+		}
+		compressionLoading = true;
+		try {
+			const detail = await apiGetFileCompression(fid);
+			if (file.id === fid) compression = detail;
+		} catch (e) {
+			console.error(e);
+			if (file.id === fid) compression = null;
+		} finally {
+			if (file.id === fid) compressionLoading = false;
+		}
+	}
+
+	/** True when we know, without asking, that this file type is never compressed (a PDF, a zip…). */
+	const compressionUnsupported = $derived(
+		!mayHaveDerivatives(file.file_name) || compression?.compressible === false
+	);
+
+	/**
+	 * The headline for the section: the single largest saving actually achieved, named so it can't be
+	 * read as a total across presets (you only ever serve one derivative per request). The quality
+	 * adjective is appended **only** when there is a score to support it, and is qualified with the
+	 * width when the preset resizes — `imperceptible at 400px` is a claim about a 400px rendering, not
+	 * a comparison against the original's dimensions.
+	 */
+	const compressionSummary = $derived.by(() => {
+		const rows = (compression?.presets ?? []).filter((p) => p.generated && p.savedBytes != null);
+		if (rows.length === 0) return null;
+		const best = rows.reduce((a, b) => ((b.savedBytes ?? 0) > (a.savedBytes ?? 0) ? b : a));
+		const adjective = ssimLabel(best.ssim);
+		const qualified =
+			adjective && best.resized && best.width ? `${adjective} at ${best.width}px` : adjective;
+		return `Saving ${formatBytes(best.savedBytes ?? 0)} on “${best.label}”${
+			qualified ? ` · ${qualified}` : ''
+		}`;
+	});
+
+	/** Plain-language reason a preset produced nothing for this blob. */
+	function skipReason(row: FilePresetCompression): string {
+		if (row.skipped === 'unsupported') return 'Not a compressible image type.';
+		if (row.skipped === 'larger') return 'Compressing made it bigger, so the original is used.';
+		if (row.skipped === 'error') return "Couldn't be read.";
+		return '';
+	}
+
+	/** `1.9 MB → 412 KB (−79%)` for a generated row; `''` when the sizes aren't both known. */
+	function sizeChange(row: FilePresetCompression): string {
+		if (row.originalSize == null || row.size == null) return '';
+		// Never round a surviving file up to a flat −100%: a 1.3 MB → 4.8 KB derivative is −99.6%, and
+		// printing "−100%" claims the bytes vanished entirely. Cap at 99 whenever something is left.
+		const raw = row.originalSize > 0 ? (1 - row.size / row.originalSize) * 100 : 0;
+		const rounded = Math.round(raw);
+		const pct = rounded >= 100 && row.size > 0 ? 99 : rounded;
+		return `${formatBytes(row.originalSize)} → ${formatBytes(row.size)} (${pct >= 0 ? '−' : '+'}${Math.abs(pct)}%)`;
 	}
 
 	/**
@@ -192,6 +277,9 @@
 		ext = parts.ext;
 		renameError = null;
 		extCheck = null;
+		// Drop the previous blob's figures immediately — a stale saving next to a new photo is worse
+		// than a blank line while the fetch lands.
+		compression = null;
 		void apiCheckFileExtension(file.id)
 			.then((c) => {
 				if (file.id === fid) extCheck = c;
@@ -451,6 +539,96 @@
 			</section>
 		{/each}
 	{/if}
+
+	<!--
+		Compression (Item 15 phase 2) — read-only reporting. It deliberately has no Save button and never
+		touches `autosave`: nothing here is an edit. What a blob gets is decided by the workspace and its
+		classes; this section only says what came of that.
+	-->
+	<section class="mb-4 rounded border">
+		<div class="flex items-center justify-between border-b bg-muted/50 px-2 py-1">
+			<Button
+				variant="ghost"
+				size="sm"
+				class="h-auto min-w-0 flex-1 justify-start gap-1.5 px-0 py-0 hover:bg-transparent"
+				aria-expanded={compressionOpen}
+				onclick={() => (compressionOpen = !compressionOpen)}
+			>
+				{#if compressionOpen}
+					<ChevronDown class="size-3.5 shrink-0" />
+				{:else}
+					<ChevronRight class="size-3.5 shrink-0" />
+				{/if}
+				<span class="text-sm font-semibold">Compression</span>
+				{#if compressionSummary}
+					<span class="min-w-0 truncate text-xs font-normal text-muted-foreground">
+						{compressionSummary}
+					</span>
+				{/if}
+			</Button>
+		</div>
+		{#if compressionOpen}
+			<div class="space-y-2 p-2">
+				{#if compressionUnsupported}
+					<p class="text-xs text-muted-foreground">This file type isn't compressed.</p>
+				{:else if compressionLoading && !compression}
+					<p class="text-xs text-muted-foreground">Loading…</p>
+				{:else if !compression}
+					<p class="text-xs text-muted-foreground">Compression details aren't available.</p>
+				{:else if compression.presets.length === 0}
+					<p class="text-xs text-muted-foreground">
+						No preset applies to this file, so no compressed copy is made. Presets are chosen in
+						<a href="/compression" class="text-primary hover:underline">Compression</a> and per class
+						in that class's settings.
+					</p>
+				{:else}
+					{#each compression.presets as row (row.presetId)}
+						<div class="rounded border px-2 py-1.5">
+							<div class="flex items-baseline justify-between gap-2">
+								<span class="min-w-0 truncate text-xs font-medium">{row.label}</span>
+								<span class="shrink-0 text-[11px] text-muted-foreground">
+									{humanizeRecipe(row.recipe)}
+								</span>
+							</div>
+							{#if row.skipped}
+								<p class="mt-0.5 text-[11px] text-muted-foreground">{skipReason(row)}</p>
+							{:else if row.generated}
+								<p class="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+									{sizeChange(row)}
+									{#if row.savedBytes != null}
+										· saves {formatBytes(row.savedBytes)}
+									{/if}
+								</p>
+								{#if row.ssim != null}
+									<p class="text-[11px] text-muted-foreground">
+										SSIM {row.ssim.toFixed(3)}
+										{#if ssimLabel(row.ssim)}({ssimLabel(row.ssim)}){/if}
+										{#if row.resized && row.width}
+											<span class="italic">
+												— measured at {row.width}px wide: codec loss at that size, not the
+												downscale.
+											</span>
+										{/if}
+									</p>
+								{/if}
+								{#if row.stale}
+									<p class="text-[11px] text-amber-600 dark:text-amber-400">
+										The recipe changed — queued for regeneration.
+									</p>
+								{/if}
+							{:else if row.stale}
+								<p class="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+									The recipe changed — queued for regeneration.
+								</p>
+							{:else}
+								<p class="mt-0.5 text-[11px] text-muted-foreground">Waiting to be generated.</p>
+							{/if}
+						</div>
+					{/each}
+				{/if}
+			</div>
+		{/if}
+	</section>
 </EditorPanelShell>
 
 {#if lightboxOpen && isImage}

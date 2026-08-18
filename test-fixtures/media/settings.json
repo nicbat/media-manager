@@ -1,8 +1,27 @@
 {
-	"classOrder": ["images", "documents"],
+	"classOrder": [
+		"images",
+		"documents"
+	],
 	"compression": {
 		"autoCompress": true,
-		"presets": [{ "id": "web", "label": "Web", "format": "webp", "quality": 80 }],
-		"workspacePresets": ["web"]
+		"presets": [
+			{
+				"id": "web",
+				"label": "Web",
+				"format": "webp",
+				"quality": 80
+			},
+			{
+				"id": "thumb",
+				"label": "Thumbnail",
+				"format": "webp",
+				"quality": 70,
+				"width": 400
+			}
+		],
+		"workspacePresets": [
+			"web"
+		]
 	}
 }

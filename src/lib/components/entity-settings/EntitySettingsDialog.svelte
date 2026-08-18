@@ -5,19 +5,29 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
 	import SchemaEditorBody from '$lib/components/schema-editor/SchemaEditorBody.svelte';
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import { Check, Loader2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { createAutosave } from '$lib/actions/autosave.svelte.js';
+	import {
+		apiGetCompressionSettings,
+		presetLabel,
+		presetRecipe,
+		type CompressionPreset
+	} from '$lib/api/compression.js';
 	import type { IconId } from '$lib/core/icons.js';
 	import type { EntitySettingsAdapter, EntityGeneralConfig } from './types.js';
 
 	/**
 	 * The single, shared **entity settings** popup used by both the Files class sidebar and the Records
-	 * type rail. One tabbed dialog combining **rename** + **title-by** (+ **group-by** for Files) on a
-	 * General tab, the shared schema editor on a Fields tab, and **delete** on a Danger tab. All data
-	 * access is injected via {@link EntitySettingsAdapter}; the dialog itself is side-agnostic.
+	 * type rail. One tabbed dialog combining **rename** + **title-by** (+ **group-by** and the
+	 * **compression subscription** for Files) on a General tab, the shared schema editor on a Fields tab,
+	 * and **delete** on a Danger tab. All data access is injected via {@link EntitySettingsAdapter}; the
+	 * dialog itself is side-agnostic — each optional section is gated on an adapter capability flag
+	 * (`hasGroupBy` / `hasSubtitle` / `hasCompression`).
 	 *
 	 * Title is always `{name} — settings` with a scope subtitle so it can't be confused with the global
 	 * **App settings** (footer gear). Reached from the row ⋮ menu and the content-header ⋮.
@@ -58,12 +68,33 @@
 	let groupBy = $state('');
 	let fields = $state<{ key: string; label: string }[]>([]);
 
+	/** This entity's own compression subscription (Item 15 phase 2); classes only. */
+	let compressionPresets = $state<string[]>([]);
+	/** The workspace preset registry, for naming the checkboxes. Loaded only when `hasCompression`. */
+	let allPresets = $state<CompressionPreset[]>([]);
+	/** Preset ids applied to **every** image; shown checked + disabled so the union is legible. */
+	let workspacePresets = $state<string[]>([]);
+	/** The registry couldn't be read — say so rather than rendering a silently empty list. */
+	let presetsFailed = $state(false);
+	/**
+	 * Set once a save actually changed the subscription, so the section can *state* (never ask) that
+	 * derivatives are being generated/pruned in the background.
+	 */
+	let regenerating = $state(false);
+
 	/** JSON snapshot of the last persisted General-tab values (the autosave baseline). */
 	let savedSnapshot = $state('');
 
 	/** Live JSON snapshot of the General-tab form (name trimmed so trailing space isn't "dirty"). */
 	const snapshot = $derived(
-		JSON.stringify({ displayName: displayName.trim(), icon, titleBy, subtitleBy, groupBy })
+		JSON.stringify({
+			displayName: displayName.trim(),
+			icon,
+			titleBy,
+			subtitleBy,
+			groupBy,
+			compressionPresets
+		})
 	);
 
 	// Dirty only when loaded, the name is non-empty (we never autosave a blank name), and the snapshot
@@ -89,16 +120,31 @@
 	/** Generic glyph for this entity kind when no icon is set (classes ⇒ tag, record types ⇒ doc). */
 	const fallbackIcon: IconId = $derived(adapter.noun === 'class' ? 'tag' : 'file-text');
 
+	/** A preset applied workspace-wide: this entity's members get it whatever this dialog says. */
+	const isWorkspacePreset = (id: string) => workspacePresets.includes(id);
+
+	/**
+	 * Is this preset in the union for this entity's members? True for its own subscription **and** for
+	 * anything the workspace already applies — the point of the list is that the union is visible, not
+	 * that this entity's slice of it is.
+	 */
+	const isSubscribed = (id: string) => isWorkspacePreset(id) || compressionPresets.includes(id);
+
 	async function load() {
 		loading = true;
+		presetsFailed = false;
+		regenerating = false;
 		try {
-			const cfg: EntityGeneralConfig = await adapter.load();
-			displayName = cfg.displayName;
-			icon = cfg.icon;
-			titleBy = cfg.titleBy;
-			subtitleBy = cfg.subtitleBy;
-			groupBy = cfg.groupBy;
-			fields = cfg.fields;
+			// Both reads are independent, so a class's settings dialog opens in one round trip's time.
+			const [cfg] = await Promise.all([adapter.load(), loadPresetRegistry()]);
+			const general: EntityGeneralConfig = cfg;
+			displayName = general.displayName;
+			icon = general.icon;
+			titleBy = general.titleBy;
+			subtitleBy = general.subtitleBy;
+			groupBy = general.groupBy;
+			compressionPresets = general.compressionPresets;
+			fields = general.fields;
 			savedSnapshot = snapshot;
 		} catch (e) {
 			console.error(e);
@@ -106,6 +152,45 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	/**
+	 * Read the workspace preset registry so the subscription checkboxes can be *named* (label + recipe)
+	 * and the workspace-wide ones can be shown as already-applied. A failure here is reported inline
+	 * instead of failing the whole dialog — everything else on the General tab still works.
+	 */
+	async function loadPresetRegistry() {
+		if (!adapter.hasCompression) {
+			allPresets = [];
+			workspacePresets = [];
+			return;
+		}
+		try {
+			const settings = await apiGetCompressionSettings();
+			allPresets = settings.presets;
+			workspacePresets = settings.workspacePresets;
+		} catch (e) {
+			console.error(e);
+			allPresets = [];
+			workspacePresets = [];
+			presetsFailed = true;
+		}
+	}
+
+	/**
+	 * Add/remove a preset from **this entity's** subscription and commit immediately (a checkbox is a
+	 * discrete change, per the shared autosave policy). Workspace-wide presets are inert here: they are
+	 * a workspace-level decision, unchecked only in the Presets dialog.
+	 *
+	 * @param id - The preset id being toggled.
+	 * @param on - The checkbox's new state.
+	 */
+	function toggleCompressionPreset(id: string, on: boolean) {
+		if (isWorkspacePreset(id)) return;
+		compressionPresets = on
+			? [...new Set([...compressionPresets, id])]
+			: compressionPresets.filter((p) => p !== id);
+		void autosave.commit();
 	}
 
 	// (Re)load whenever the dialog opens (reset to the General tab); flush any pending edit on close so
@@ -128,9 +213,37 @@
 		const trimmed = displayName.trim();
 		if (loading || !trimmed || snapshot === savedSnapshot) return;
 		const committed = snapshot;
-		await adapter.save({ displayName: trimmed, icon, titleBy, subtitleBy, groupBy });
+		const previousPresets = subscriptionOf(savedSnapshot);
+		await adapter.save({
+			displayName: trimmed,
+			icon,
+			titleBy,
+			subtitleBy,
+			groupBy,
+			compressionPresets
+		});
 		savedSnapshot = committed;
+		// Only claim a background run when the subscription is what actually changed — a rename must not
+		// print "generating derivatives".
+		if (adapter.hasCompression && previousPresets !== JSON.stringify(compressionPresets))
+			regenerating = true;
 		onchanged?.();
+	}
+
+	/**
+	 * The `compressionPresets` slice of a saved snapshot, as a comparable string. Returns `null` for an
+	 * unreadable snapshot so a parse failure reads as "unknown" rather than as "was empty".
+	 *
+	 * @param snap - A JSON snapshot previously produced by {@link snapshot}.
+	 */
+	function subscriptionOf(snap: string): string | null {
+		try {
+			return JSON.stringify(
+				(JSON.parse(snap) as { compressionPresets?: string[] }).compressionPresets ?? []
+			);
+		} catch {
+			return null;
+		}
 	}
 
 	async function doDelete() {
@@ -291,6 +404,63 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
+						</div>
+					{/if}
+
+					{#if adapter.hasCompression}
+						<Separator />
+						<div class="flex flex-col gap-2">
+							<Label>Compression</Label>
+							{#if presetsFailed}
+								<p class="text-sm text-muted-foreground">
+									Couldn't read the compression presets. Open
+									<a href="/compression" class="text-primary hover:underline">Compression</a> to check.
+								</p>
+							{:else if allPresets.length === 0}
+								<p class="text-sm text-muted-foreground">
+									No compression presets exist yet, so there is nothing for this {adapter.noun} to subscribe
+									to. Create one in
+									<a href="/compression" class="text-primary hover:underline">Compression</a>.
+								</p>
+							{:else}
+								<p class="text-xs text-muted-foreground">
+									Members of this {adapter.noun} get these on top of the workspace default. A file in
+									several classes gets every preset any of them asks for — nothing competes.
+								</p>
+								<div class="flex flex-col gap-1 rounded-md border p-2">
+									{#each allPresets as preset (preset.id)}
+										{@const workspaceWide = isWorkspacePreset(preset.id)}
+										<div class="flex items-center gap-2 rounded px-1 py-1 hover:bg-muted/50">
+											<Checkbox
+												id="compression-sub-{preset.id}"
+												checked={isSubscribed(preset.id)}
+												disabled={workspaceWide}
+												onCheckedChange={(v) => toggleCompressionPreset(preset.id, v === true)}
+											/>
+											<Label
+												for="compression-sub-{preset.id}"
+												class="flex min-w-0 flex-1 items-baseline gap-2 text-sm font-normal"
+											>
+												<span class="truncate">{presetLabel(preset)}</span>
+												<span class="shrink-0 text-xs text-muted-foreground">
+													{presetRecipe(preset)}
+												</span>
+											</Label>
+											{#if workspaceWide}
+												<span class="shrink-0 text-xs text-muted-foreground">
+													applied to everything
+												</span>
+											{/if}
+										</div>
+									{/each}
+								</div>
+								{#if regenerating}
+									<p class="text-xs text-muted-foreground">
+										Saved. Derivatives for this {adapter.noun}'s files are being generated and
+										pruned in the background — your originals aren't touched.
+									</p>
+								{/if}
+							{/if}
 						</div>
 					{/if}
 

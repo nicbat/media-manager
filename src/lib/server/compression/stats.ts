@@ -7,7 +7,7 @@ import {
 	type CompressionSettings
 } from '$lib/storage/compressionSettings.js';
 import { fileExtension } from '$lib/core/images.js';
-import { isCompressibleFilename, isStale } from '$lib/storage/derived.js';
+import { isCompressibleFilename, isStale, readClassPresetMap } from '$lib/storage/derived.js';
 import { FLAGGED_SSIM } from './queue.js';
 
 /**
@@ -165,11 +165,20 @@ export async function computeCompressionStats(
 	settings?: CompressionSettings
 ): Promise<CompressionStats> {
 	const config = settings ?? readCompressionSettings();
-	const subscribed = presetsForBlob(config);
+	const classPresets = readClassPresetMap();
 	const manifest = await readManifest();
 
+	// Phase 2: a blob's preset set is the union of the workspace subscription and its classes', so
+	// coverage has to be judged per blob. `subscribedAnywhere` is only for the per-preset report rows.
+	const anywhere = new Set(config.workspacePresets);
+	for (const ids of classPresets.values()) for (const id of ids) anywhere.add(id);
+	const subscribed = config.presets.filter((p) => anywhere.has(p.id));
+
 	const perPreset = subscribed.map((p) => statsForPreset(manifest, p, recipeOf(p)));
-	const primary = subscribed[0] ?? null;
+	// The headline is the workspace-wide preset — the one every image gets — so it stays a like-for-like
+	// number as class subscriptions come and go.
+	const primary =
+		config.presets.find((p) => p.id === config.workspacePresets[0]) ?? subscribed[0] ?? null;
 
 	let totalFiles = 0;
 	let coveredFiles = 0;
@@ -189,7 +198,7 @@ export async function computeCompressionStats(
 		let covered = false;
 		let blocked = false;
 
-		for (const preset of subscribed) {
+		for (const preset of presetsForBlob(config, entry.classes, classPresets)) {
 			const d = entry.derived?.[preset.id];
 			// "Stale" means a derivative that *exists* but is out of date. One that was never generated is
 			// `pendingFiles`, not stale — counting it as both would double it in the backfill button's

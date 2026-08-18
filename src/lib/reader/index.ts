@@ -24,7 +24,13 @@ export {
 	type PostsTheme
 } from './posts.js';
 export { Collection, type FieldAccessible } from './collection.js';
-export { MediaItem, MMRecord, type ReaderContext, type VariantInfo } from './items.js';
+export {
+	MediaItem,
+	MMRecord,
+	type ReaderContext,
+	type VariantInfo,
+	type SrcsetOptions
+} from './items.js';
 export {
 	parseManifest,
 	WorkspaceFormatError,

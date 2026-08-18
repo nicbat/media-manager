@@ -693,7 +693,7 @@
 					prio: 'low',
 					use: 2,
 					group: 'assets',
-					note: 'Phase 1 shipped 2026-08-18 — compressed twins alongside the originals, measured (SSIM) and reported at /compression. Presets are the unit and things subscribe to them, so a multi-class blob has no conflict to resolve. Manifest `derived` block, background worker w/ batched writes, backfill + sweep, reader item.variant(). Resolved its open question and settled Item 35; Item 23 now depends on it. Phase 2 (widths, per-class subscription, srcset) + Item 47 (versioned URLs) carved out.'
+					note: 'Phases 1 + 2 shipped 2026-08-18 — compressed twins alongside the originals, measured (SSIM) and reported at /compression. Presets are the unit and things subscribe to them; a blob gets the UNION of the workspace + every class it is in, so a multi-class blob has no conflict to resolve, and a prune only drops what no remaining subscriber wants. Manifest `derived` block, background worker w/ batched writes, backfill + sweep, width-bearing presets, per-class subscription UI, per-file Compression section, file:saved/quality/presets + sort keys, reader variant()/variantInfo()/srcset(). Resolved its open question and settled Item 35; Item 23 now depends on it. Item 47 (versioned URLs) carved out; phase 3 (video) unscheduled.'
 				},
 				{
 					n: 47,

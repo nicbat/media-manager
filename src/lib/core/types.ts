@@ -327,7 +327,16 @@ export const ClassConfigSchema = z.object({
 	/** Verbose grid (Item 8): when true the catalog tiles show `verboseFields` as key/value rows. */
 	verbose: z.boolean().optional(),
 	/** Verbose grid (Item 8): the class schema field keys (≤ `MAX_VERBOSE_FIELDS`) shown per tile. */
-	verboseFields: z.array(z.string()).optional()
+	verboseFields: z.array(z.string()).optional(),
+	/**
+	 * Compression preset ids this class subscribes to (Item 15 phase 2) — recipes its **members** get on
+	 * top of the workspace-wide subscription.
+	 *
+	 * This is a subscription, not a setting: a blob's derivative set is the *union* of every class it
+	 * belongs to plus the workspace default, so two classes asking for different recipes never conflict.
+	 * See `presetsForBlob` in `storage/compressionSettings.ts`.
+	 */
+	compressionPresets: z.array(z.string()).optional()
 });
 export type ClassConfig = z.infer<typeof ClassConfigSchema>;
 
@@ -360,6 +369,31 @@ export type ClassSummary = z.infer<typeof ClassSummarySchema>;
  * One blob as surfaced by the All Files grid: manifest identity + derived class membership + intrinsic
  * info. `classes` is the denormalized membership index (so the grid renders chips from one read).
  */
+/**
+ * A blob's compression state, flattened for the grid (Item 15 phase 2).
+ *
+ * Deliberately a **summary**, not the manifest's whole `derived` map: the grid needs one savings figure,
+ * one quality figure and the preset names, and shipping the full per-preset detail on every row of a
+ * 400-tile masonry would be pure weight. The per-file editor fetches the detail separately.
+ */
+export const FileCompressionSchema = z.object({
+	/** Preset ids that actually produced a derivative (skipped ones are omitted). */
+	presets: z.array(z.string()).default([]),
+	/** Bytes saved by the **reported** preset (see `savedPreset`) — not a sum across presets, which would be meaningless. */
+	savedBytes: z.number(),
+	/** The same saving as a percentage of the original, 0–100. */
+	savedPct: z.number(),
+	/** Which preset the savings figures describe: the workspace-wide one when present, else the first generated. */
+	savedPreset: z.string(),
+	/**
+	 * The **lowest** SSIM across this blob's generated derivatives, or null if none scored. Lowest rather
+	 * than mean or primary: it answers "what is the worst thing I'm actually serving for this photo?",
+	 * which is the question the flagged list exists for.
+	 */
+	ssim: z.number().nullable()
+});
+export type FileCompression = z.infer<typeof FileCompressionSchema>;
+
 export const FileItemSchema = z.object({
 	id: ImageIdSchema,
 	file_name: z.string(),
@@ -379,6 +413,8 @@ export const FileItemSchema = z.object({
 	 * the filename. Mirrors the records side's `title_value`; absent ⇒ the tile falls back to `file_name`.
 	 */
 	title_value: z.string().optional(),
+	/** Compression summary (Item 15 phase 2); absent when the blob has no generated derivative. */
+	compression: FileCompressionSchema.optional(),
 	/**
 	 * Verbose-grid field payload (Item 8): requested class-schema fields → stringified value (`''` when
 	 * empty). Set only in the single-class catalog view when `?fields=` was sent (mirrors `title_value`'s

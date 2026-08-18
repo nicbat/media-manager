@@ -429,12 +429,28 @@
           quality given up.
         </p>
         <div class="metabar">
+          <span class="chip good"><b>Shipped</b> phases 1 + 2 &middot; 2026-08-18</span>
           <span class="chip acc"><b>Unblocks</b> Item 15</span>
           <span class="chip">Resolves <b>Item 35</b> (adopt sharp)</span>
           <span class="chip">Size <b>L</b> <span class="muted">(re-scoped from M)</span></span>
           <span class="chip good">Open questions <b>0</b></span>
           <span class="chip">1 deferred decision</span>
           <span class="chip">Not 1.0-blocking</span>
+        </div>
+        <div class="note good" style="margin-top:20px">
+          <span class="tag">Shipped &mdash; 2026-08-18</span>
+          <p><b>Phase 1</b> (the compressed twin) and <b>phase 2</b> (the ladder: widths, per-class
+          subscriptions, <code>srcset()</code>, per-file surfacing) are both built and in
+          <code>main</code>. The design below stands as written &mdash; the preset/subscription model
+          survived implementation unchanged. Two things are worth reading as history rather than plan:
+          the <b>phase&nbsp;2</b> section describes work that is now done, and <b>phase&nbsp;3</b>
+          (video) remains deliberately unbuilt. The deferred versioned-URL decision became
+          <b>FUTURE_CHANGES Item&nbsp;47</b>, with the trigger to revisit recorded there.</p>
+          <p>One defect worth recording, because the plan asserted the opposite: staleness was
+          originally decided from the manifest record alone, so deleting <code>media/derived/</code>
+          and re-running a backfill regenerated <i>nothing</i> &mdash; the manifest kept claiming files
+          that no longer existed. <code>planWork</code> now checks the filesystem (one
+          <code>readdir</code> per preset), and the recovery case is a regression test.</p>
         </div>
         <div class="note" style="margin-top:20px">
           <span class="tag">Revision 2 — after adversarial review against source</span>

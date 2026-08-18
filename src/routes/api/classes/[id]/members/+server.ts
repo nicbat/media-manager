@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { listClassMembers, addMembers, removeMembers } from '$lib/storage/classRepo.js';
+import { scheduleCompression } from '$lib/server/compression/queue.js';
 import { unlinkBlobFromClass } from '$lib/storage/relationLinks.js';
 import { FilterClauseSchema } from '$lib/core/filters.js';
 
@@ -63,6 +64,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	if (!parsed.success) throw error(400, 'ids array is required');
 	try {
 		const records = await addMembers(params.id, parsed.data.ids);
+		// Item 15 phase 2: membership changes the *union* of presets these blobs are subscribed to, so
+		// re-plan them. Not awaited — the encode must never delay the membership write.
+		scheduleCompression(parsed.data.ids);
 		return json({ success: true, added: records.length });
 	} catch (err) {
 		const e = err as Error;
@@ -80,6 +84,9 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 		// Drop these blobs from any linked record's file field before they leave the class.
 		for (const fileId of parsed.data.ids) await unlinkBlobFromClass(params.id, fileId);
 		await removeMembers(params.id, parsed.data.ids);
+		// Leaving a class can shrink the union — the worker's prune pass drops any derivative no remaining
+		// subscriber wants, and keeps the ones another class still does.
+		scheduleCompression(parsed.data.ids);
 		return json({ success: true });
 	} catch (err) {
 		const e = err as Error;

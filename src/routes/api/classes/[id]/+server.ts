@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { readClassFile, updateClassConfig, deleteClass } from '$lib/storage/classRepo.js';
 import { purgeClassLinks } from '$lib/storage/relationLinks.js';
 import { MAX_VERBOSE_FIELDS } from '$lib/core/recordDisplay.js';
+import { scheduleCompression } from '$lib/server/compression/queue.js';
 
 const ConfigPatchSchema = z.object({
 	displayName: z.string().min(1).max(256).optional(),
@@ -17,6 +18,9 @@ const ConfigPatchSchema = z.object({
 	icon: z.string().max(64).optional(),
 	// Verbose grid (Item 8): show each catalog tile's chosen fields as key/value rows.
 	verbose: z.boolean().optional(),
+	// Compression subscription (Item 15 phase 2): preset ids this class's members get on top of the
+	// workspace-wide subscription. An empty array clears it.
+	compressionPresets: z.array(z.string().max(64)).max(32).optional(),
 	// Verbose grid (Item 8): the class schema field keys shown per tile (capped at MAX_VERBOSE_FIELDS).
 	verboseFields: z.array(z.string().max(256)).optional()
 });
@@ -48,7 +52,14 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 				? patch.verboseFields.slice(0, MAX_VERBOSE_FIELDS)
 				: undefined;
 		if (patch.verbose === false) patch.verbose = undefined;
+		// An empty subscription is stored as absent, so `readClassPresetMap` doesn't carry empty entries.
+		const subscriptionChanged = patch.compressionPresets !== undefined;
+		if (patch.compressionPresets?.length === 0) patch.compressionPresets = undefined;
 		const config = await updateClassConfig(params.id, patch);
+		// Item 15 phase 2: changing what this class subscribes to changes its members' preset union —
+		// generate what's newly wanted and prune what nothing wants any more. Never awaited, never
+		// confirmed: originals are untouched, so there is nothing to ask about.
+		if (subscriptionChanged) scheduleCompression('all');
 		return json({ success: true, config });
 	} catch (err) {
 		const e = err as Error;

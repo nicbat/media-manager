@@ -15,6 +15,7 @@ import { withFileLock } from './lock.js';
 import { assertSafeBasename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
 import { deleteDerivedForBlob, renameDerivedForBlob } from './derived.js';
+import { readCompressionSettings } from './compressionSettings.js';
 import {
 	isProtectedSchemaKey,
 	schemaUserFieldKeys,
@@ -45,7 +46,8 @@ import {
 	outOfClassMap,
 	getAvailableFileIds,
 	readGlobalBlobNames,
-	type Manifest
+	type Manifest,
+	type ManifestEntry
 } from './manifest.js';
 import {
 	resolveRecordRefs,
@@ -62,6 +64,7 @@ import {
 	fieldSupportsSuggest,
 	type ClassFile,
 	type ClassSummary,
+	type FileCompression,
 	type FileItem,
 	type FileListResponse,
 	type JsonRecord,
@@ -934,7 +937,42 @@ async function backfillSizes(manifest: Manifest, diskNames: Set<string>): Promis
 	await setEntrySizes(sizes);
 }
 
-function fileItemFromEntry(id: string, manifest: Manifest): FileItem {
+/**
+ * Flatten a blob's `derived` map into the grid's compression summary (Item 15 phase 2).
+ *
+ * @param entry - The manifest entry.
+ * @param primaryPresetId - The workspace-wide preset, whose savings are the headline figure.
+ * @returns The summary, or undefined when nothing was generated (so the row stays compact).
+ */
+function fileCompressionSummary(
+	entry: ManifestEntry | undefined,
+	primaryPresetId: string | undefined
+): FileCompression | undefined {
+	const derived = entry?.derived;
+	if (!derived) return undefined;
+	const generated = Object.entries(derived).filter(([, d]) => d.file_name && !d.skipped);
+	if (generated.length === 0) return undefined;
+
+	// Report savings against the workspace-wide preset when it's there, so the number means the same
+	// thing on every row; fall back to the first generated preset for a blob that only a class subscribes.
+	const chosen = generated.find(([presetId]) => presetId === primaryPresetId) ?? generated[0];
+	const [savedPreset, d] = chosen;
+	const source = d.source_size ?? entry?.size ?? 0;
+	const savedBytes = Math.max(0, source - (d.size ?? 0));
+
+	const scores = generated.map(([, x]) => x.ssim).filter((v): v is number => v != null);
+
+	return {
+		presets: generated.map(([presetId]) => presetId),
+		savedBytes,
+		savedPct: source > 0 ? Math.round((savedBytes / source) * 1000) / 10 : 0,
+		savedPreset,
+		// Lowest, not mean: "what is the worst thing I'm serving for this photo?".
+		ssim: scores.length > 0 ? Math.min(...scores) : null
+	};
+}
+
+function fileItemFromEntry(id: string, manifest: Manifest, primaryPresetId?: string): FileItem {
 	const e = manifest.files[id];
 	return {
 		id,
@@ -944,18 +982,31 @@ function fileItemFromEntry(id: string, manifest: Manifest): FileItem {
 		size: e?.size,
 		created_at: e?.created_at,
 		width: e?.width,
-		height: e?.height
+		height: e?.height,
+		compression: fileCompressionSummary(e, primaryPresetId)
 	};
 }
 
-/** Built-in (intrinsic, class-agnostic) sort keys offered on every file listing (Item 9). */
-const FILE_SORT_KEYS = new Set<string>(['name', 'created_at', 'size']);
+/** The workspace-wide preset id, whose savings the grid reports per row. */
+function primaryPresetId(): string | undefined {
+	return readCompressionSettings().workspacePresets[0];
+}
+
+/**
+ * Built-in (intrinsic, class-agnostic) sort keys offered on every file listing (Item 9).
+ * `saved`/`quality` are the compression pair (Item 15 phase 2).
+ */
+const FILE_SORT_KEYS = new Set<string>(['name', 'created_at', 'size', 'saved', 'quality']);
 
 /** Read a built-in blob sort value off a {@link FileItem}. `name` ⇒ filename; else the intrinsic field. */
 function fileBuiltinSortValue(f: FileItem, key: string): RawSortValue {
 	if (key === 'name') return f.file_name;
 	if (key === 'created_at') return f.created_at ?? null;
 	if (key === 'size') return f.size ?? null;
+	// Uncompressed blobs sort as empty rather than 0, so the shared comparator puts them last instead of
+	// mixing them in with genuinely zero-saving files.
+	if (key === 'saved') return f.compression?.savedBytes ?? null;
+	if (key === 'quality') return f.compression?.ssim ?? null;
 	return null;
 }
 
@@ -998,6 +1049,7 @@ export async function listAllFiles(params?: {
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
 	await backfillSizes(manifest, diskNames);
+	const primaryPreset = primaryPresetId();
 
 	const q = params?.query ? params.query.toLowerCase() : null;
 	const classIds = params?.classIds ?? null;
@@ -1076,7 +1128,7 @@ export async function listAllFiles(params?: {
 			if (!has) continue;
 		}
 		if (!matchesSearch(id, entry.file_name)) continue;
-		const item = fileItemFromEntry(id, manifest);
+		const item = fileItemFromEntry(id, manifest, primaryPreset);
 		if (groupByClassFile) {
 			const rec = (groupByClassFile.records[id] ?? {}) as Record<string, unknown>;
 			item.group_by_value = groupByValue(
@@ -1142,6 +1194,7 @@ export async function listClassMembers(
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
 	await backfillSizes(manifest, diskNames);
+	const primaryPreset = primaryPresetId();
 	const available = availableFromManifest(manifest, diskNames);
 
 	const groupBy = params?.groupBy ?? null;
@@ -1182,7 +1235,7 @@ export async function listClassMembers(
 		}
 		// Incomplete filter (Item 10): drop members where every class field has a value.
 		if (incomplete && !recordHasEmptyField(recObj, incompleteKeys)) continue;
-		const item = fileItemFromEntry(fileId, manifest);
+		const item = fileItemFromEntry(fileId, manifest, primaryPreset);
 		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy, resolveRef);
 		if (titleField) {
 			const tv = stringifyFieldValue(file.schema, titleField, recObj[titleField], resolveRef);

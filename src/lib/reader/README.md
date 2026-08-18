@@ -147,6 +147,8 @@ everything back into one self-contained tree when you need it):
 
 - **A `files` glob always wins.** `baseUrl` only fills the asset map when no glob populated it, so the
   two modes never fight — keep the glob for small workspaces, switch to `baseUrl` when size bites.
+  `files` is **optional in the type**, so `{ data }` on its own typechecks — you never need a placeholder
+  `files: {}`.
 - **Dimensions are unaffected** — they come off the manifest, not the bundler.
 - **Compressed variants come along** — derivatives are synthesized one directory deeper,
   `` `${baseUrl}/derived/<preset>/<file>` ``, so `item.variant('web')` works in static mode with no extra
@@ -226,6 +228,7 @@ MediaItem {
   field(key): unknown;                 // value by key (fields first, else intrinsics)
   variant(preset): string | null;      // a compressed variant's URL
   variantInfo(preset): VariantInfo | null;  // …plus its own width/height/size/ssim
+  srcset(options?): string;            // the whole width ladder as a srcset value ('' if none)
   file(key): MediaItem | null;         // follow a file-type field
   files(key): Collection<MediaItem>;   // follow a list-of-files field
   record(key): MMRecord | null;        // follow a record-type field
@@ -353,6 +356,41 @@ by construction. The canonical pattern, with the fallback baked in:
   gated independently of the originals.
 - **Preset ids are the workspace's**, not the reader's — enumerate with `Object.keys` over a
   representative item's `variants`, or read them off the editor's compression settings.
+
+**When the presets differ in _width_, don't pick one — hand the browser the whole ladder.** `srcset()`
+emits every width-bearing variant as a `srcset` candidate list, so the browser resolves the viewport and
+DPR maths you can't do at build time:
+
+```svelte
+<img
+	srcset={item.srcset() || undefined}
+	sizes="(max-width: 700px) 100vw, 33vw"
+	src={item.src}
+	alt=""
+/>
+```
+
+```js
+item.srcset();
+// → "/assets/s.400.webp 400w, /assets/s.800.webp 800w, /assets/sunset.hash.jpeg 2000w"
+item.srcset({ presets: ['thumb', 'web'] }); // only these rungs (unknown ids ignored)
+item.srcset({ includeOriginal: false }); // cap the ladder at the largest derivative
+```
+
+- **The reader writes `srcset`, you write `sizes`.** A `w` descriptor states a fact about the file — how
+  wide that candidate actually is — and the reader knows it from the manifest. `sizes` states how wide
+  the image will be _in your layout_, which only you know, so the reader never invents one. Omit `sizes`
+  and the browser assumes `100vw` and over-fetches on every grid.
+- **`''` means "no ladder".** Candidates are sorted ascending and deduplicated by width (first one
+  wins — first in your `presets` order, else the workspace's); a variant with no usable width is
+  skipped rather than emitted as a broken descriptor, and a blob with no width-bearing variants returns
+  the empty string, because `srcset="x.jpg 2000w"` says nothing `src` didn't. Hence
+  `srcset={item.srcset() || undefined}` — the `|| undefined` drops the attribute instead of rendering
+  `srcset=""`.
+- **The original is a rung too, by default.** It's appended at `item.width` unless a variant already
+  occupies that width (or the blob's width is unknown, in which case it is omitted rather than guessed).
+  Without it a browser on a large viewport is capped at your biggest derivative — usually wrong for a
+  lightbox. Pass `includeOriginal: false` when that cap is the point.
 
 ## Posts — rendered markdown (Item 14)
 
@@ -494,6 +532,7 @@ _silence_, not an error. The usual suspects, quickest first:
 | **`Cannot find module 'media-manager/reader/vite'`**          | `dist/reader/` not built (`file:`/git installs may skip it)                                      | Run `npm run build:reader` in the media-manager checkout                                             |
 | **`file()` / `record()` returns `null`**                      | The referenced id is dangling (target was deleted)                                               | Expected — guard with `?.`; not a bug                                                                |
 | **`variant('web')` always `null`**                            | No `derived` glob (or wrong prefix / missing `query: '?url'`), or the preset was never generated | Point `derived` at `…/media/derived/*/*` with `query: '?url'`; check `item.variants` for what exists |
+| **`srcset()` returns `''`**                                   | No variant carries a usable `width` — same-size presets only, or no derivatives resolved at all  | Configure a width-bearing preset (a resized `thumb`); a lone original is deliberately not a ladder   |
 
 ## Guarantees
 

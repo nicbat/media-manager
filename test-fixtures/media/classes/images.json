@@ -1,27 +1,52 @@
 {
 	"schema": {
-		"caption": { "type": "string", "removable": true, "defaultValue": "", "suggest": true },
-		"rating": { "type": "number", "removable": true },
-		"favorite": { "type": "boolean", "removable": true, "defaultValue": false },
+		"caption": {
+			"type": "string",
+			"removable": true,
+			"defaultValue": "",
+			"suggest": true
+		},
+		"rating": {
+			"type": "number",
+			"removable": true
+		},
+		"favorite": {
+			"type": "boolean",
+			"removable": true,
+			"defaultValue": false
+		},
 		"category": {
 			"type": "dropdown",
 			"removable": true,
-			"options": ["nature", "abstract", "portrait"],
+			"options": [
+				"nature",
+				"abstract",
+				"portrait"
+			],
 			"defaultValue": "nature"
 		},
 		"tags": {
 			"type": "list",
 			"removable": true,
-			"itemTypes": ["string"],
+			"itemTypes": [
+				"string"
+			],
 			"defaultValue": [],
 			"suggest": true
 		},
 		"source": {
 			"type": "url",
 			"removable": true,
-			"defaultValue": { "display_name": "", "url": "" }
+			"defaultValue": {
+				"display_name": "",
+				"url": ""
+			}
 		},
-		"related_doc": { "type": "file", "removable": true, "defaultValue": "" },
+		"related_doc": {
+			"type": "file",
+			"removable": true,
+			"defaultValue": ""
+		},
 		"album": {
 			"type": "record",
 			"removable": true,
@@ -29,14 +54,25 @@
 			"linkedField": "photos",
 			"defaultValue": ""
 		},
-		"date_taken": { "type": "date", "removable": true, "defaultValue": "" }
+		"date_taken": {
+			"type": "date",
+			"removable": true,
+			"defaultValue": ""
+		}
 	},
 	"config": {
 		"displayName": "Images",
 		"displayField": "caption",
 		"icon": "image",
 		"verbose": true,
-		"verboseFields": ["caption", "rating", "category"]
+		"verboseFields": [
+			"caption",
+			"rating",
+			"category"
+		],
+		"compressionPresets": [
+			"thumb"
+		]
 	},
 	"records": {
 		"bad5de29-3471-4072-8229-af28c4ae446b": {
@@ -45,8 +81,14 @@
 			"rating": 5,
 			"favorite": true,
 			"category": "nature",
-			"tags": ["warm", "sky"],
-			"source": { "display_name": "Sample", "url": "https://example.com/sunset" },
+			"tags": [
+				"warm",
+				"sky"
+			],
+			"source": {
+				"display_name": "Sample",
+				"url": "https://example.com/sunset"
+			},
 			"related_doc": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75",
 			"album": "a1b2c3d4-0000-4000-8000-000000000001",
 			"date_taken": "2026-06-29"
@@ -57,8 +99,14 @@
 			"rating": 4,
 			"favorite": false,
 			"category": "nature",
-			"tags": ["green", "trees"],
-			"source": { "display_name": "", "url": "" },
+			"tags": [
+				"green",
+				"trees"
+			],
+			"source": {
+				"display_name": "",
+				"url": ""
+			},
 			"related_doc": "deadbeef-0000-4000-8000-000000000000",
 			"date_taken": "2019-01-02"
 		},
@@ -68,8 +116,14 @@
 			"rating": 3,
 			"favorite": false,
 			"category": "abstract",
-			"tags": ["blue", "water"],
-			"source": { "display_name": "", "url": "" },
+			"tags": [
+				"blue",
+				"water"
+			],
+			"source": {
+				"display_name": "",
+				"url": ""
+			},
 			"album": "a1b2c3d4-0000-4000-8000-000000000001"
 		}
 	}
