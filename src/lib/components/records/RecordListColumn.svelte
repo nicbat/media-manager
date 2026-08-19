@@ -7,6 +7,7 @@
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
 	import VerboseFieldsMenu from '$lib/components/data-grid/VerboseFieldsMenu.svelte';
+	import SelectionCheckbox from '$lib/components/selection/SelectionCheckbox.svelte';
 	import { ListChecks, Plus, X, AlertTriangle } from 'lucide-svelte';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import { recordListTitle, recordListSubtitle } from '$lib/core/recordDisplay.js';
@@ -28,7 +29,8 @@
 	 * @param groupBy - Bindable group field (host reloads on change). "Title by" is no longer here —
 	 *   it's a persisted per-type setting in the ⋮ → Settings dialog.
 	 * @param selectionMode / selectedIds / selectedRecordId - Multiselect + active-row state.
-	 * @param onOpen / onToggleSelect / onNewRecord / onToggleSelectionMode / onBulkChanged - Callbacks.
+	 * @param onOpen / onToggleSelect / onSetSelected / onNewRecord / onToggleSelectionMode /
+	 *   onBulkChanged - Callbacks (`onSetSelected` backs the master + per-group select-all checkboxes).
 	 * @param onOpenSettings / onDeleteType - Open the active type's settings dialog / delete confirm
 	 *   from the content-header ⋮ (always reachable, even when the rail is collapsed).
 	 * @param crumbs - Optional breadcrumb trail rendered above the header (Home › Records › <type>).
@@ -51,6 +53,7 @@
 		selectedRecordId,
 		onOpen,
 		onToggleSelect,
+		onSetSelected,
 		onNewRecord,
 		onToggleSelectionMode,
 		onBulkChanged,
@@ -75,7 +78,9 @@
 		selectedIds: Set<string>;
 		selectedRecordId: string | null;
 		onOpen: (id: string) => void;
-		onToggleSelect: (id: string) => void;
+		onToggleSelect: (id: string, shiftKey?: boolean) => void;
+		/** Bulk select/deselect (the master "Select all" + each group header's checkbox). */
+		onSetSelected: (ids: string[], selected: boolean) => void;
 		onNewRecord: () => void;
 		onToggleSelectionMode: () => void;
 		onBulkChanged: () => void;
@@ -83,6 +88,13 @@
 		onDeleteType: () => void;
 		crumbs?: { label: string; href?: string }[];
 	} = $props();
+
+	/**
+	 * Whether Shift was down for the click currently being handled. A shadcn `Checkbox` reports a
+	 * boolean change, not the originating event, so the row records the modifier in the capture phase
+	 * and `onCheckedChange` reads it back — that's what lets a shift-click extend a range.
+	 */
+	let shiftHeld = $state(false);
 
 	/** Schema field keys eligible for group-by / title (name first). */
 	const schemaFieldKeys = $derived(schema ? schemaUserFieldKeys(schema) : []);
@@ -209,6 +221,13 @@
 	<!-- Bulk bar -->
 	{#if selectionMode}
 		<div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 p-2 text-sm">
+			<!-- Master select-all over every visible record (tri-state; ticks itself when all are picked). -->
+			<SelectionCheckbox
+				ids={records.map((r) => r.id)}
+				isSelected={(id) => selectedIds.has(id)}
+				onSet={onSetSelected}
+				label="Select all"
+			/>
 			<RecordBulkActions
 				{typeId}
 				{schema}
@@ -237,12 +256,15 @@
 					class="flex items-center gap-2 border-b px-2 py-1.5 hover:bg-muted/50 {item.id ===
 					selectedRecordId
 						? 'bg-muted'
-						: ''}"
+						: ''} {selectionMode ? 'select-none' : ''}"
+					onclickcapture={(e) => (shiftHeld = e.shiftKey)}
 				>
 					{#if selectionMode}
+						<!-- The checkbox reports a change, not the event, so the row grabs Shift on the way down
+						     (capture beats the checkbox's own click handler) to drive range selection. -->
 						<Checkbox
 							checked={selectedIds.has(item.id)}
-							onCheckedChange={() => onToggleSelect(item.id)}
+							onCheckedChange={() => onToggleSelect(item.id, shiftHeld)}
 							aria-label="Select record"
 						/>
 					{/if}
@@ -283,9 +305,18 @@
 			{#if groupedRecords}
 				{#each groupedRecords as [groupKey, list] (groupKey)}
 					<div
-						class="sticky top-0 z-10 border-b bg-background/95 px-2 py-1 text-xs font-medium text-muted-foreground backdrop-blur"
+						class="sticky top-0 z-10 flex items-center gap-2 border-b bg-background/95 px-2 py-1 text-xs font-medium text-muted-foreground backdrop-blur"
 					>
-						{fieldLabel(groupBy)}: {groupKey} ({list.length})
+						{#if selectionMode}
+							<!-- Select/deselect this group; ticks itself once every row in it is picked by hand. -->
+							<SelectionCheckbox
+								ids={list.map((r) => r.id)}
+								isSelected={(id) => selectedIds.has(id)}
+								onSet={onSetSelected}
+								ariaLabel="Select all in group"
+							/>
+						{/if}
+						<span>{fieldLabel(groupBy)}: {groupKey} ({list.length})</span>
 					</div>
 					{#each list as item (item.id)}
 						{@render row(item)}

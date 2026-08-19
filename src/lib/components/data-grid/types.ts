@@ -80,10 +80,20 @@ export interface GridConfig {
 export interface GridCallbacks {
 	/** Single click on a tile when not in selection mode (open editor). */
 	onOpen: (id: string) => void;
-	/** Toggle the tile's selection (the click action while `config.selectable` is true). */
-	onToggleSelect?: (id: string) => void;
+	/**
+	 * Toggle the tile's selection (the click action while `config.selectable` is true). `shiftKey`
+	 * reports whether Shift was held, so the host can extend a range from its anchor instead of
+	 * toggling a single tile; the grid itself keeps no anchor.
+	 */
+	onToggleSelect?: (id: string, shiftKey?: boolean) => void;
 	/** Whether a tile is currently selected. */
 	isSelected?: (id: string) => boolean;
+	/**
+	 * Select or deselect a whole set of ids at once. Supplying this (together with `isSelected`) is
+	 * what makes the grid render a tri-state checkbox in each group header while `config.selectable`
+	 * is on; the master "select all" lives in the host's own bulk bar, over the same callback.
+	 */
+	onSetSelected?: (ids: string[], selected: boolean) => void;
 }
 
 /** Min tile column width (px) for each grid size. */

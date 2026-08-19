@@ -38,6 +38,7 @@
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
 	import { classSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
 	import DataGrid from '$lib/components/data-grid/DataGrid.svelte';
+	import SelectionCheckbox from '$lib/components/selection/SelectionCheckbox.svelte';
 	import EntityIcon from '$lib/components/EntityIcon.svelte';
 	import type { GridItem, GridConfig, GridCallbacks } from '$lib/components/data-grid/types.js';
 	import * as Select from '$lib/components/ui/select/index.js';
@@ -54,6 +55,7 @@
 	import { settingsStore } from '$lib/stores/settings.js';
 	import { refreshTrigger, triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import type { SortDir } from '$lib/core/sort.js';
+	import { resolveRangeSelection } from '$lib/core/rangeSelect.js';
 	import type { ClassSummary, FileItem, SchemaDefinition } from '$lib/core/types.js';
 
 	let files = $state<FileItem[]>([]);
@@ -128,6 +130,9 @@
 	const selectedIds = new SvelteSet<string>();
 	/** Multiselect: off by default; toggled by the header button. Tiles only select while on. */
 	let selectionMode = $state(false);
+	/** Shift-click range state: the last plainly-clicked tile, and the span the live range claimed. */
+	let rangeAnchorId: string | null = null;
+	let lastShiftRange: string[] = [];
 	/**
 	 * The open file is deep-linked via `?file=<id>` (alongside `?class=`), so a reload or shared URL
 	 * reopens the same file editor. Initialized straight from the URL; {@link syncUrl} writes it back on
@@ -662,9 +667,20 @@
 	});
 	const gridCallbacks: GridCallbacks = {
 		onOpen: (id) => (editorFileId = id),
-		onToggleSelect: (id) => toggleSelect(id),
-		isSelected: (id) => selectedIds.has(id)
+		onToggleSelect: (id, shiftKey) => toggleSelect(id, shiftKey),
+		isSelected: (id) => selectedIds.has(id),
+		onSetSelected: (ids, selected) => setSelected(ids, selected)
 	};
+	/**
+	 * Every visible file id in **visual order** — flattened across groups when grouping is on, so it
+	 * reads exactly as the grid does. Backs both the bulk bar's master "Select all" (order irrelevant)
+	 * and shift-click range selection (order load-bearing: a range may span group boundaries).
+	 */
+	const visibleIds = $derived(
+		groupedFiles
+			? groupedFiles.flatMap(([, list]) => list.map((f) => f.id))
+			: files.map((f) => f.id)
+	);
 
 	// Keep the toolbar size control in sync with the global settings store (so the Settings dialog
 	// on this same page updates it live).
@@ -766,9 +782,52 @@
 		crossGroupBy = '';
 	}
 
-	function toggleSelect(id: string) {
+	/** Drop the whole selection **and** the shift-click range state (they must never outlive it). */
+	function clearSelection() {
+		selectedIds.clear();
+		rangeAnchorId = null;
+		lastShiftRange = [];
+	}
+
+	/**
+	 * Click a tile in selection mode. A plain click toggles that one file and drops the anchor there;
+	 * a **shift**-click extends from the anchor across {@link visibleIds} (so a range spans groups just
+	 * as it looks on screen), giving back only what the previous shift-range had claimed.
+	 */
+	function toggleSelect(id: string, shiftKey = false) {
+		if (shiftKey && rangeAnchorId) {
+			const { range, deselect } = resolveRangeSelection({
+				ordered: visibleIds,
+				anchorId: rangeAnchorId,
+				targetId: id,
+				previousRange: lastShiftRange
+			});
+			if (range.length) {
+				for (const rid of deselect) selectedIds.delete(rid);
+				for (const rid of range) selectedIds.add(rid);
+				lastShiftRange = range; // anchor stays put so the next shift-click re-extends from it
+				return;
+			}
+		}
 		if (selectedIds.has(id)) selectedIds.delete(id);
 		else selectedIds.add(id);
+		rangeAnchorId = id;
+		lastShiftRange = [];
+	}
+
+	/**
+	 * Bulk-apply a selection state to a set of ids — the master "Select all" (every visible file) and
+	 * each group header's checkbox both land here. Deselecting a group only drops that group's ids, so
+	 * a selection spanning several groups survives. A bulk action ends any live shift-range: the next
+	 * shift-click starts from a fresh anchor rather than re-extending a range the user has moved past.
+	 */
+	function setSelected(ids: string[], selected: boolean) {
+		for (const id of ids) {
+			if (selected) selectedIds.add(id);
+			else selectedIds.delete(id);
+		}
+		rangeAnchorId = null;
+		lastShiftRange = [];
 	}
 
 	/**
@@ -776,7 +835,7 @@
 	 * the selection ring can't be confused with the editor's active-tile ring; leaving clears too.
 	 */
 	function toggleSelectionMode() {
-		selectedIds.clear();
+		clearSelection();
 		if (selectionMode) {
 			selectionMode = false;
 		} else {
@@ -800,7 +859,7 @@
 		if (!bulkClassId || selectedIds.size === 0) return;
 		await apiAddMembers(bulkClassId, [...selectedIds]);
 		bulkClassId = '';
-		selectedIds.clear();
+		clearSelection();
 		await loadMeta();
 		await loadFiles();
 		// Membership change can flip a class-scoped picker's `_out_of_class` flag; notify pickers/tabs.
@@ -810,7 +869,7 @@
 	async function bulkRemove() {
 		if (!soloClass || selectedIds.size === 0) return;
 		await apiRemoveMembers(soloClass, [...selectedIds]);
-		selectedIds.clear();
+		clearSelection();
 		await loadMeta();
 		await loadFiles();
 		// Removing membership also unlinks the blob from any linked record (server-side cascade), so the
@@ -828,7 +887,7 @@
 		if (!soloClass || selectedIds.size === 0) return;
 		await apiBulkUpdateClassRecords(soloClass, [...selectedIds], { [key]: value });
 		toast.success(`Updated ${selectedIds.size} file${selectedIds.size === 1 ? '' : 's'}`);
-		selectedIds.clear();
+		clearSelection();
 		await loadFiles();
 		triggerImageListRefresh();
 	}
@@ -836,7 +895,7 @@
 	async function bulkDelete() {
 		if (selectedIds.size === 0) return;
 		await apiDeleteFilesFromDisk([...selectedIds]);
-		selectedIds.clear();
+		clearSelection();
 		deleteFilesOpen = false;
 		await loadMeta();
 		await loadFiles();
@@ -1200,7 +1259,14 @@
 
 		{#if selectionMode}
 			<div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 p-2 text-sm">
-				<span>{selectedIds.size} selected</span>
+				<!-- Master select-all over every visible file (tri-state: ticks itself when all are picked). -->
+				<SelectionCheckbox
+					ids={visibleIds}
+					isSelected={(id) => selectedIds.has(id)}
+					onSet={setSelected}
+					label="Select all"
+				/>
+				<span class="text-muted-foreground">{selectedIds.size} selected</span>
 				<Select.Root type="single" value={bulkClassId} onValueChange={(v) => (bulkClassId = v)}>
 					<Select.Trigger class="h-8 w-44">{bulkLabel}</Select.Trigger>
 					<Select.Content>

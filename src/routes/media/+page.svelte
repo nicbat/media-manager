@@ -39,6 +39,7 @@
 	import { projectRecordRow } from '$lib/core/recordDisplay.js';
 	import { apiUpdateTypeSettings } from '$lib/api/client.js';
 	import type { SortDir } from '$lib/core/sort.js';
+	import { resolveRangeSelection } from '$lib/core/rangeSelect.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
 
 	/**
@@ -93,6 +94,9 @@
 
 	const selectedIds = new SvelteSet<string>();
 	let selectionMode = $state(false);
+	/** Shift-click range state: the last plainly-clicked row, and the span the live range claimed. */
+	let rangeAnchorId: string | null = null;
+	let lastShiftRange: string[] = [];
 	/**
 	 * The open record is deep-linked via `?record=<id>` (alongside `?type=`), so reload / share /
 	 * back-forward reopen the same detail pane. {@link syncUrl} writes both back on change; `urlReady`
@@ -339,7 +343,7 @@
 		if (id === activeTypeId) return;
 		activeTypeId = id;
 		selectedRecordId = null;
-		selectedIds.clear();
+		clearSelection();
 		selectionMode = false;
 		query = '';
 		searchField = '';
@@ -380,13 +384,56 @@
 		}
 	}
 
-	function toggleSelect(id: string) {
+	/**
+	 * Tick a row's checkbox. A plain click toggles that one record and drops the range anchor there; a
+	 * **shift**-click extends from the anchor across {@link orderedIds} — the same flattened group
+	 * order the list renders — giving back only what the previous shift-range had claimed.
+	 */
+	function toggleSelect(id: string, shiftKey = false) {
+		if (shiftKey && rangeAnchorId) {
+			const { range, deselect } = resolveRangeSelection({
+				ordered: orderedIds,
+				anchorId: rangeAnchorId,
+				targetId: id,
+				previousRange: lastShiftRange
+			});
+			if (range.length) {
+				for (const rid of deselect) selectedIds.delete(rid);
+				for (const rid of range) selectedIds.add(rid);
+				lastShiftRange = range; // anchor stays put so the next shift-click re-extends from it
+				return;
+			}
+		}
 		if (selectedIds.has(id)) selectedIds.delete(id);
 		else selectedIds.add(id);
+		rangeAnchorId = id;
+		lastShiftRange = [];
+	}
+
+	/**
+	 * Bulk-apply a selection state to a set of ids — the list's master "Select all" (every visible
+	 * record) and each group header's checkbox both land here. Deselecting a group only drops that
+	 * group's ids, so a selection spanning several groups survives. A bulk action ends any live
+	 * shift-range: the next shift-click starts from a fresh anchor.
+	 */
+	function setSelected(ids: string[], selected: boolean) {
+		for (const id of ids) {
+			if (selected) selectedIds.add(id);
+			else selectedIds.delete(id);
+		}
+		rangeAnchorId = null;
+		lastShiftRange = [];
+	}
+
+	/** Drop the whole selection **and** the shift-click range state (they must never outlive it). */
+	function clearSelection() {
+		selectedIds.clear();
+		rangeAnchorId = null;
+		lastShiftRange = [];
 	}
 
 	function toggleSelectionMode() {
-		selectedIds.clear();
+		clearSelection();
 		if (selectionMode) {
 			selectionMode = false;
 		} else {
@@ -467,7 +514,7 @@
 	}
 
 	async function afterBulk() {
-		selectedIds.clear();
+		clearSelection();
 		await loadRecords();
 		// A bulk set-field/delete can change titles or drop records that other grids/pickers reference;
 		// notify them (here and in other tabs).
@@ -626,6 +673,7 @@
 			{selectedRecordId}
 			onOpen={(id) => (selectedRecordId = id)}
 			onToggleSelect={toggleSelect}
+			onSetSelected={setSelected}
 			onNewRecord={createRecord}
 			onToggleSelectionMode={toggleSelectionMode}
 			onBulkChanged={afterBulk}

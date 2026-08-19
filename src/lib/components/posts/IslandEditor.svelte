@@ -101,7 +101,12 @@
 	</div>
 
 	<!-- Primary photo -->
-	<Button variant="outline" size="sm" class="justify-start" onclick={() => onChangePhoto('primary')}>
+	<Button
+		variant="outline"
+		size="sm"
+		class="justify-start"
+		onclick={() => onChangePhoto('primary')}
+	>
 		<ImageOff class="mr-2 size-4" />
 		{data.uuid ? 'Change photo' : 'Choose photo'}
 	</Button>

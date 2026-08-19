@@ -447,8 +447,12 @@
 				<DropdownMenu.Item onSelect={() => c()?.toggleOrderedList().run()}>
 					Numbered list
 				</DropdownMenu.Item>
-				<DropdownMenu.Item onSelect={() => c()?.toggleCodeBlock().run()}>Code block</DropdownMenu.Item>
-				<DropdownMenu.Item onSelect={() => c()?.setHorizontalRule().run()}>Divider</DropdownMenu.Item>
+				<DropdownMenu.Item onSelect={() => c()?.toggleCodeBlock().run()}
+					>Code block</DropdownMenu.Item
+				>
+				<DropdownMenu.Item onSelect={() => c()?.setHorizontalRule().run()}
+					>Divider</DropdownMenu.Item
+				>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 
@@ -498,7 +502,9 @@
 		style="left: {rect?.left ?? 0}px; top: {(rect?.bottom ?? 0) + 6}px"
 	>
 		{#each groupedSlash(props.items) as g (g.group)}
-			<div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+			<div
+				class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+			>
 				{g.group}
 			</div>
 			{#each g.items as it (it.title)}

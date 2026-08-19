@@ -115,19 +115,25 @@ const ui = await launchUi(); // headless; viewport 1440x900; baseURL :3000
 // fixture before each, so scenarios can't contaminate each other. Cumulative steps (and multiple
 // shoots) live INSIDE one scenario — that's the unit that shares state.
 const scenarios = [
-	['images-grid', async (p, shoot) => {
-		await p.goto('/media/images');
-		await p.getByText('Images (3)').waitFor(); // wait for real content, not a fixed sleep
-		await shoot('images-grid');
-		// Interaction state that is NOT in the URL — exactly what needs a live driver:
-		await p.getByText('Sunset', { exact: true }).first().click();
-		await p.getByText('sunset.png').waitFor();
-		await shoot('sunset-editor-open');
-	}],
-	['notes-empty', async (p, shoot) => {
-		await p.goto('/media/notes'); // starts from the pristine fixture again, not images' leftovers
-		await shoot('notes-grid');
-	}]
+	[
+		'images-grid',
+		async (p, shoot) => {
+			await p.goto('/media/images');
+			await p.getByText('Images (3)').waitFor(); // wait for real content, not a fixed sleep
+			await shoot('images-grid');
+			// Interaction state that is NOT in the URL — exactly what needs a live driver:
+			await p.getByText('Sunset', { exact: true }).first().click();
+			await p.getByText('sunset.png').waitFor();
+			await shoot('sunset-editor-open');
+		}
+	],
+	[
+		'notes-empty',
+		async (p, shoot) => {
+			await p.goto('/media/notes'); // starts from the pristine fixture again, not images' leftovers
+			await shoot('notes-grid');
+		}
+	]
 	// ...add every other scenario here; each runs in this one browser, each on fresh data.
 ];
 

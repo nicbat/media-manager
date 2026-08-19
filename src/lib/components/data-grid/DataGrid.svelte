@@ -4,6 +4,7 @@
 	import { FileText, TriangleAlert } from 'lucide-svelte';
 	import EntityIcon from '$lib/components/EntityIcon.svelte';
 	import { Masonry } from '$lib/components/masonry/index.js';
+	import SelectionCheckbox from '$lib/components/selection/SelectionCheckbox.svelte';
 	import { gridColMin, type GridItem, type GridConfig, type GridCallbacks } from './types.js';
 
 	/**
@@ -19,7 +20,8 @@
 	 * @param items - Flat, already-filtered/ordered items (used when `groups` is null).
 	 * @param groups - Pre-grouped `[groupKey, items][]`; a null key renders an unlabelled section.
 	 * @param config - Size, selectability, active highlight, group label fn, empty text.
-	 * @param callbacks - onOpen / onToggleSelect / isSelected.
+	 * @param callbacks - onOpen / onToggleSelect / isSelected / onSetSelected (the last enables the
+	 *   per-group select-all checkbox in group headers).
 	 * @param toolbar - Optional snippet rendered in a sticky header (e.g. group-by/size selects).
 	 * @param bulkBar - Optional snippet rendered in the sticky header (e.g. bulk actions).
 	 */
@@ -46,21 +48,25 @@
 	/** Masonry for image tiles (native aspect ratio); uniform square CSS grid for name-forward records. */
 	const masonry = $derived(config.variant !== 'text');
 	const gridStyle = $derived(`grid-template-columns: repeat(auto-fill, minmax(${colMin}px, 1fr))`);
+	/** Group headers get a tri-state checkbox only while selecting and only if the host wired it up. */
+	const groupSelectable = $derived(
+		config.selectable && !!callbacks.onSetSelected && !!callbacks.isSelected
+	);
 </script>
 
 {#snippet tile(item: GridItem)}
 	{@const selected = callbacks.isSelected?.(item.id) ?? false}
-	{@const activate = () =>
-		config.selectable ? callbacks.onToggleSelect?.(item.id) : callbacks.onOpen(item.id)}
+	{@const activate = (shiftKey = false) =>
+		config.selectable ? callbacks.onToggleSelect?.(item.id, shiftKey) : callbacks.onOpen(item.id)}
 	<Card.Root
 		class="group relative cursor-pointer gap-0 overflow-hidden p-0 hover:ring-2 hover:ring-primary {selected ||
 		config.activeId === item.id
 			? 'ring-2 ring-primary'
-			: ''}"
+			: ''} {config.selectable ? 'select-none' : ''}"
 		role="button"
 		tabindex={0}
-		onclick={activate}
-		onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && activate()}
+		onclick={(e) => activate(e.shiftKey)}
+		onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && activate(e.shiftKey)}
 	>
 		{#if item.warning}
 			<div
@@ -163,9 +169,20 @@
 			{#each sections as [groupKey, groupItems] (groupKey)}
 				<div class="mb-5">
 					{#if groupKey !== null}
-						<h3 class="mb-2 text-sm font-semibold text-muted-foreground">
-							{config.groupLabel ? config.groupLabel(groupKey) : groupKey}
-							<span class="ml-1 font-normal">({groupItems.length})</span>
+						<h3 class="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+							{#if groupSelectable}
+								<!-- Select/deselect the whole group; ticks itself once every tile in it is picked. -->
+								<SelectionCheckbox
+									ids={groupItems.map((i) => i.id)}
+									isSelected={(id) => callbacks.isSelected?.(id) ?? false}
+									onSet={(ids, selected) => callbacks.onSetSelected?.(ids, selected)}
+									ariaLabel="Select all in group"
+								/>
+							{/if}
+							<span>
+								{config.groupLabel ? config.groupLabel(groupKey) : groupKey}
+								<span class="ml-1 font-normal">({groupItems.length})</span>
+							</span>
 						</h3>
 					{/if}
 					{#if masonry}

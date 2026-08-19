@@ -1,7 +1,7 @@
 {
 	"name": "media-manager",
 	"private": false,
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"type": "module",
 	"bin": {
 		"media-manager": "bin/media-manager.js"
@@ -46,7 +46,8 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:serve": "node scripts/serve-test.mjs",
-		"upgrade-data": "node scripts/upgrade-data.mjs"
+		"upgrade-data": "node scripts/upgrade-data.mjs",
+		"release": "node scripts/release.mjs"
 	},
 	"devDependencies": {
 		"@lucide/svelte": "^1.22.0",

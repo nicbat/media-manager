@@ -287,7 +287,9 @@
 						/>
 					{/key}
 				{:else}
-					<div class="prose prose-sm mm-post-preview max-w-none rounded-lg border bg-background p-6">
+					<div
+						class="prose prose-sm mm-post-preview max-w-none rounded-lg border bg-background p-6"
+					>
 						<!-- Local-first single-user app: the previewed HTML is the user's own post markdown,
 						     rendered client-side for their own eyes. No untrusted input crosses this boundary. -->
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->

@@ -43,7 +43,10 @@ export interface SlashHandlers {
  * @param opts.items - The full command list (filtered by the typed query, title + keywords).
  * @param opts.handlers - Host popup lifecycle hooks (open / update / keydown / close).
  */
-export function createSlashCommands(opts: { items: SlashItem[]; handlers: SlashHandlers }): Extension {
+export function createSlashCommands(opts: {
+	items: SlashItem[];
+	handlers: SlashHandlers;
+}): Extension {
 	return Extension.create({
 		name: 'slashCommands',
 		addProseMirrorPlugins() {
@@ -58,8 +61,7 @@ export function createSlashCommands(opts: { items: SlashItem[]; handlers: SlashH
 						if (!q) return opts.items;
 						return opts.items.filter(
 							(i) =>
-								i.title.toLowerCase().includes(q) ||
-								(i.keywords ?? []).some((k) => k.includes(q))
+								i.title.toLowerCase().includes(q) || (i.keywords ?? []).some((k) => k.includes(q))
 						);
 					},
 					command: ({ editor, range, props }) => props.run({ editor, range }),

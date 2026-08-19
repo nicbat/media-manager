@@ -26,6 +26,9 @@ These came out of the Q&A and are treated as fixed constraints throughout:
 | Mobile | Nice-to-have, desktop first |
 | Scale | Hundreds of files now, bigger later |
 | Cost | Not the constraint — optimize for the product |
+| Hosting | **Scale-to-zero container** — autoscaling and no box to babysit, but a real filesystem |
+| EXIF | **Keep ExifTool, upgraded** — the research reversed the pure-JS call; see below |
+| Database | Acceptable as a *cache*; git stays source of truth. With a warm container it's an optimization, not a requirement |
 
 ---
 
@@ -240,27 +243,185 @@ For private content, two findings matter:
 
 ### J. Hosting
 
-**Don't reach for a persistent volume.** Fly, Railway, Render and generic VPS block storage are all **single-attach** — a Fly volume cannot be shared across two running Machines. Only AWS EFS is genuinely multi-mount, and it's 10–100× slower than local disk at exactly the operation this app does at session start: git's tree walk. There's a documented production incident of `git clone` degrading to **51 KB/s** on EFS.
+**The choice is a scale-to-zero container** — autoscaling, ~$0 idle, no box to babysit, but still a real filesystem so ExifTool, sharp and git all keep working. This is the decision that rescued the architecture: it delivers the scaling property without forcing the storage rewrite.
 
-Every platform converges on the same shape: **ephemeral scratch disk, re-clone per session, GitHub as the durable store.**
+**Don't reach for a persistent shared volume.** Fly, Railway, Render and generic VPS block storage are all **single-attach** — a Fly volume "can be attached to only one Machine," and it's a slice of an NVMe drive on one physical host, not network storage. Only AWS EFS is genuinely multi-mount, and it's 10–100× slower than local disk at exactly the operation this app does at session start: git's tree walk. There's a documented incident of `git clone` degrading to **51 KB/s** on EFS.
 
-- **Phase 1:** a single Hetzner CX-series VPS, ~€9–11/month. Native-speed git and image processing, no serverless ceilings to fight.
-- **Phase 2:** shard across boxes with a tenant→box registry. Not Kubernetes, not EFS.
-- **Ruled out:** Cloudflare standard Workers (no filesystem, no subprocess — ExifTool and sharp are simply impossible), Render with disks (dead-ends past a handful of tenants), Fargate + EFS.
+The converged shape everywhere: **ephemeral disk, re-clone (or re-fork) per session, GitHub as the durable store.**
 
-Clone latency is manageable with `--filter=blob:none --no-checkout --depth 1 --sparse` — especially once blobs live in R2 and the repo is metadata-only, at which point a clone is small and fast permanently.
+**The criterion that decides the platform** is not price — it's whether you can *guarantee* every request for a workspace reaches the same instance. Your lock is an `fs.open(path,'wx')` sentinel file, which is only atomic on a local POSIX filesystem, so two instances serving one workspace corrupts data. A platform with best-effort affinity is disqualified, not merely worse.
 
-Running cost at phase 1: roughly **$12/month** all-in (VPS + R2 + a free GitHub App).
+**Fly.io** researched in depth, and it maps well:
+
+- **Volume forking is the standout feature.** `fly volumes fork` copies a volume with **lazy block hydration** — blocks are fetched only when read — giving "cold-start performance close to warm-start." Fly's docs recommend it explicitly for *cloned repositories* and per-user environments. That takes the 500MB clone out of the critical path entirely: fork a seed volume that already contains the repo instead of cloning per session.
+- **Single-writer falls out of the model for free**: a volume attaches to exactly one Machine, so one volume per tenant *is* the mutex. Your existing `withFileLock` stays valid because a tenant is exactly one node.
+- **Warm pools**: pre-provision machines and claim one via `exec` in **~1–2s**, versus ~20s for a config-update restart and 60s+ for cold provisioning.
+- **Routing**: `fly-replay` with `instance=<machine_id>` targets an exact Machine and will start it if stopped; session replay caching removes the router hop for ~5 minutes.
+- **Billing while stopped is just rootfs** — $0.15/GB per 30 days, no CPU or RAM charge.
+
+**Fly's three sharp edges**, all real:
+
+1. **`fly-replay` cannot carry a request body over 1MB.** Your photo upload path is exactly that. Fly's own recommended workarounds are direct-to-storage uploads or a per-tenant hostname that avoids the replay hop — which is another independent argument for presigned uploads straight to a bucket.
+2. **A `git push` can be SIGKILLed at 5 seconds.** `kill_timeout` defaults to 5s (max 300s). A push interrupted mid-write on a volume is a corrupted working directory. Raise it, drain on SIGTERM, and self-shutdown only after a confirmed clean state.
+3. **Autostop sheds at most one machine per region per pass, every few minutes** — so 50 tenants in one app idle for hours. Fly's own guidance is one app per tenant plus app-level idle shutdown.
+
+Also worth knowing: **shared CPU is hard-throttled** to 5ms per 80ms per vCPU with a burst balance. Bursty editing rides the burst fine; a bulk HEIC conversion of a photo library will exhaust it and crawl.
+
+**Cost sketch** (Fly, one tenant, ~20h active/month, 5GB volume): roughly **$5/month**, of which compute is under a dollar — the volume dominates. At 50 tenants with 5GB volumes and snapshots off: **~$66/month**, still storage-dominated. Scale-to-zero saves nearly all the compute and none of the storage.
+
+*Cloud Run and Cloudflare Containers were being researched when the run hit a limit; that comparison is pending. The open question for Cloud Run is whether its session affinity is guaranteed or best-effort — if best-effort, it's out on the single-writer criterion. For Cloudflare Containers, a Durable Object in front would give exact addressing, which would be the cleanest coordination story available, but Workers can't run ExifTool or sharp, so the container would have to do all the work.*
 
 ---
+
+## Storage economics — is object storage actually more expensive?
+
+You said moving blobs to S3 "seems more expensive than the GitHub repo strategy we're using right now." **You're right about today, wrong about the endgame — and right about S3 specifically.** Three findings, in order of importance.
+
+### 1. At your current scale, both options cost exactly $0
+
+Hundreds of files, under 1GB, low traffic: R2's free tier covers **10GB of storage**, and your repo is free. There is no money on the table in either direction. **Don't move for cost reasons today** — moving now buys complexity and buys back nothing.
+
+### 2. At scale, object storage is *cheaper* than the repo — often 10–30×
+
+This is the counterintuitive part, and the reason is bandwidth, not storage.
+
+**Serving images from the repo doesn't make bandwidth free. It just moves who bills you for it.**
+
+| Strategy | Storage metered by | **Egress metered by** | Egress rate |
+|---|---|---|---|
+| Images in the repo | nobody ($0) | **Vercel** | free to 100GB (Hobby) / 1TB (Pro), then **$0.15–0.35/GB** |
+| Images in the repo, on Netlify | nobody ($0) | **Netlify** | 20 credits/GB ≈ **$0.13–0.20/GB** after ~15GB free |
+| Git LFS | GitHub, $0.07/GiB-mo | **GitHub (clones) + Vercel (visitors)** | $0.0875/GiB **plus** Vercel's rate — you pay twice |
+| **Cloudflare R2** | Cloudflare, $0.015/GB-mo | **nobody** | **$0.00, unmetered** |
+| AWS S3 | AWS, $0.023/GB-mo | **AWS** | **$0.09/GB** after 100GB free |
+| Backblaze B2 + Cloudflare | Backblaze, $0.00695/GB-mo | **nobody** (CDN partnership) | **$0.00** |
+
+```mermaid
+flowchart LR
+  subgraph A["Images in the repo — today"]
+    G1["GitHub<br/>storage free"] --> BO["Build output"] --> V1["Vercel CDN"]
+    V1 -->|"2.5 MB per pageview<br/>METERED by Vercel"| U1["Visitor"]
+  end
+
+  subgraph B["Images in R2"]
+    G2["GitHub<br/>metadata JSON only"] --> V2["Vercel CDN"]
+    V2 -->|"0.2 MB shell only"| U2["Visitor"]
+    RB["R2 bucket<br/>$0.015/GB-mo"] --> CE["Cloudflare edge"]
+    CE -->|"2.5 MB per pageview<br/>egress $0"| U2
+  end
+```
+
+*Identical bytes reach the visitor in both models. The only thing that changes is which meter they pass through — and R2's meter reads zero.*
+
+Modelling a photo site at **2.5 MB of images per pageview** (~10–12 optimized images) plus a 0.2 MB HTML/CSS/JS shell:
+
+| At 200,000 pageviews/mo | Repo → Vercel | Git LFS | **R2** | S3 | B2 + CF |
+|---|---|---|---|---|---|
+| 1GB library | $20.00 | $20.00 | **$0.00** | $36.98 | $0.00 |
+| 10GB library | $20.00 ⚠️ | $20.00 | **$0.00** | $37.19 | $0.00 |
+| 50GB library | not viable ⚠️ | $22.56 | **$0.60** | $38.11 | $0.28 |
+| 500GB library | not viable 🚫 | $51.90 | **$7.35** | $48.46 | $3.41 |
+
+⚠️ past GitHub's "ideally under 1GB" · 🚫 far past "under 5GB strongly recommended"
+
+The arithmetic for the 50GB R2 case: storage `(50 − 10 free) × $0.015 = $0.60`, egress `$0`, read ops `2.4M` against a 10M free tier `= $0`, and Vercel now serves only the 40GB shell — inside Hobby's free 100GB. Total **$0.60**. The same case on S3 is **$38.11**, and $36 of that is pure egress.
+
+At 1M pageviews/month the gap becomes **$271/mo (repo) versus $27/mo (R2)**, entirely attributable to who bills the image bytes.
+
+**The flip point is a bandwidth number, not a storage number: ~40,000 pageviews/month**, where Vercel Hobby's 100GB runs out. (On Netlify it's ~6,000 — the credit migration made their free tier far tighter than its reputation, and each production deploy costs 15 of your 300 credits.)
+
+### 3. Your instinct is exactly right about S3
+
+S3 meters egress at $0.09/GB, so you'd pay for storage *and* bandwidth and save nothing versus the repo. **If "object storage" means S3 in your head, your instinct is correct.** R2 and B2-behind-a-CDN are a different product category on this one axis — the zero-egress model is the entire argument, and S3 doesn't have it. Rule S3 out.
+
+### The hidden cost of the repo: history is permanent
+
+This is the strongest argument against the repo strategy and it's usually stated too vaguely, so here's the mechanism. Git delta-compresses text-like data. A re-exported JPEG is a completely different compressed bitstream, so git stores **a full second copy** — and it lives in `.git` forever, even after you `git rm` the old file.
+
+| Event | Working tree | `.git` |
+|---|---|---|
+| Initial import (~500 photos) | 1.0 GB | ~1.0 GB |
+| + one global re-compression pass | 1.0 GB | **~2.0 GB** |
+| + a second pass (new format) | 1.0 GB | **~3.0 GB** |
+| + a third | 1.0 GB | **~4.0 GB** |
+| + a fourth | 1.0 GB | **~5.0 GB** — GitHub's ceiling, on a 1GB library |
+
+**Your repo grows with your edit history, not your library.** And this is the one cost that's irreversible without rewriting history — force-pushing, invalidating every clone, breaking every commit SHA.
+
+> ⚠️ **This is time-sensitive.** The image-compression work in flight is *precisely* the operation that doubles history in a single commit. Settle the storage question **before** that pass runs, not after — afterwards the migration costs a history rewrite on top.
+
+### Git LFS is the actual trap
+
+It looks like "repo without the bloat." It's the worst option at every scale: LFS storage counts every version ever pushed (so you get the clone-speed fix without the storage fix), it's **4.7× R2's storage price**, and its bandwidth meter is consumed by **clones and CI checkouts** — a 50GB library × 30 builds/month = **$121/month**, with nothing in the UI warning you first. Skip it.
+
+### How this actually works for a site
+
+**Model A — images in the repo (today).** `static/photos/sunset.jpg` is copied into the build output; markup says `<img src="/photos/sunset.jpg">`; Vercel serves it from the same origin as your HTML. Deploy pipeline unchanged, local dev works with zero config, no CORS, no credentials.
+
+**Model B — images in a bucket.** Photos live in R2; markup says `<img src="https://img.yoursite.com/sunset.jpg">`; the repo keeps only the metadata JSON naming the files.
+
+- **Deploy pipeline:** builds get smaller and faster, but you add an **upload step decoupled from deploy** — which means you can now ship a site referencing an image you forgot to upload. Mitigate with a build-time existence check (a `HEAD` per referenced key; read ops are free at your volume).
+- **Local dev is what breaks.** The fix is base-URL indirection: one env var resolving to `/photos` locally and the bucket domain in production. **Your reader package already has a `baseUrl` concept from Item 45**, so this seam exists — extending it is small.
+- **CORS: not needed.** `<img>` tags don't require it. You'd only need a policy if JavaScript reads the bytes (canvas, fetch, a client-side uploader).
+- **Credentials: none in the browser.** The bucket is public for reads — you do *not* sign URLs for public portfolio images. Write credentials live only in CI and your local env.
+- **One requirement people miss:** Cloudflare's docs state the free `r2.dev` URL "is rate-limited and should only be used for development purposes," and CNAME-ing to it is "an unsupported access path." Production needs a real custom domain attached through Cloudflare — which is also what puts their cache and WAF in front of the bucket.
+
+**The "clone and you have everything" property does cost you something** — be honest about it. But restoring it is a second command, not a lost capability: a full 500GB restore is **$0 on R2** (`rclone sync`), versus **$45 on S3** and **$39.87 on Git LFS**. Wrap it in `make restore` and the ergonomic loss is about ten seconds.
+
+### When staying in the repo is simply correct
+
+It is correct right now, and not as a compromise: free at your scale, **atomic with the metadata** (one commit changes the photo and the JSON describing it — no window where the site references an image the bucket lacks), no credentials, works offline, and the repo *is* the backup. For a project whose premise is local-first with no database, that's philosophically aligned, not just convenient. Two of those properties — no credentials, works locally — never break at any scale.
+
+### Triggers to watch
+
+Any one of these flips the answer:
+
+1. **Vercel Fast Data Transfer > 60GB/month** — one click away on your Usage dashboard. This is the single number to watch (~24k pageviews/mo).
+2. **`.git` exceeds 2GB** — check with `git count-objects -vH` and read `size-pack`, not the working tree. This is the number nobody looks at.
+3. **`.git` is more than 2× the working tree** — history bloat now dominates, and only a rewrite cures it.
+4. **You're about to run a bulk re-compression pass** — see the warning above.
+5. **Any single file approaches 50 MiB** — you're one high-res export from a hard-rejected push (100 MiB is a hard block).
+6. **You want to upload from your phone.** A product trigger, and it overrides cost entirely — "commit to a repo" is not an upload interface. *This is the one that actually applies to the web version being planned here.*
+7. **A second person adds images** — binary merge conflicts have no resolution strategy.
+
+### Recommendation
+
+**Don't move now. Build the seam now, and pre-commit to the trigger.** Keep images in the repo; extend the existing `baseUrl` indirection so the future migration is a config change plus an `rclone sync` rather than a refactor; settle the decision before the compression pass; and when you do move, move to **R2** — free egress, a free tier that covers your whole library, and a $0 restore.
+
+Note the tension with the rest of this document: the *web version* triggers #6 on day one. Phone uploads and presigned PUTs are the reason blobs eventually leave the repo — not the storage bill.
 
 ## 🔴 Fix this week, regardless
 
-`npm audit` flags **`exiftool-vendored` as high severity**. The pin is `^25.0.0` (25.2.0 installed); current is **37.2.0** — an argument-injection bug via unsanitized stdin interpolation, reported as CVE-2026-43893 (CVSS 8.2), fixed in ≥35.19.0.
+**The vulnerability is reachable in your app right now — this is not theoretical.**
 
-That's a 12-major-version gap, so it's not a drive-by bump — expect API changes. It matters locally; it matters a great deal more in a hosted app processing files whose names other people control.
+`exiftool-vendored` ≤35.18.0 has an argument-injection flaw: it runs ExifTool in `-stay_open` mode and doesn't reject `\n` / `\r` / `\0` in caller-supplied strings, so a filename containing a newline injects extra CLI arguments. Advisory **GHSA-cw26-7653-2rp5**, CVSS 8.2. You're on 25.2.0.
 
----
+The reachable path: **`assertSafeBasename` (`src/lib/storage/filenames.ts`) rejects `\0`, `/`, `\`, `.` and `..` — but not `\n` or `\r`.** `POST /api/files/[id]/rename` validates with only that check, and the resulting filename flows straight into `exiftool.read()` / `.deleteAllTags()`. Blast radius is limited today (anyone with API access to a local-first app likely has filesystem access already), but it is exactly the kind of thing that stops being limited the moment this is hosted.
+
+**The fix is small:**
+
+1. Upgrade to `^37.2.0`. The fix landed in 35.19.0; 37 inherits it. A changelog scan across v26–v37 found **no breaking changes** to `read()` / `write()` / `deleteAllTags()` or to any tag this app reads. The real prerequisite is **Node 22+** (raised in v30 and v36). Two things deserve a smoke test: v31 rebuilt the tag definitions, and v32 flipped `useMWG` to default true, which can shift date-tag formatting. Your existing `fileMetadata.test.ts` already exercises read and strip against real fixtures, so the regression harness exists.
+2. **Harden `assertSafeBasename` to reject `\n` and `\r`** as defence in depth, independent of the library fix.
+3. Close a second, unrelated gap in the same pass: the upload sanitizer permits a **leading `-`**, so `-flagname.jpg` could be read by ExifTool as a flag.
+
+**Half a day, including smoke tests.**
+
+### Why not replace ExifTool with a pure-JS library
+
+This was the plan under "true serverless" and the research argues against it now that a container is the target:
+
+| Capability | Survives a pure-JS swap? |
+|---|---|
+| Read EXIF/GPS/dimensions/orientation across JPEG/PNG/WEBP/TIFF/GIF | **Yes** — `exifr` or `exifreader` cover it |
+| Read HEIC/HEIF | Yes, read-only |
+| Read PDF metadata | Partial — needs `pdf-lib` as a separate addition |
+| Strip **all** metadata, JPEG, without re-encoding | **No** — `piexifjs` only touches the EXIF APP1 segment, misses IPTC/XMP/ICC, and is unmaintained |
+| Strip **all** metadata, PNG/TIFF/WEBP | **No** — no maintained pure-JS chunk surgery exists |
+| Strip **GPS only**, any format | **No** — no pure-JS library does surgical tag deletion |
+
+The sharp-based alternative (re-encode and drop metadata) fails on your own design constraint: the app deliberately avoids pixel re-encoding. And sharp's prebuilt binaries often can't even encode HEIC.
+
+**Reading is a clean win in pure JS; stripping is not.** Swapping only the read path to `exifr` remains a reasonable *optional* future move (2–3 days) if the native child process ever becomes a hosting problem — but it doesn't remove ExifTool from the app, because strip still needs it.
 
 ## Roadmap
 
@@ -270,16 +431,16 @@ flowchart LR
   A50["50 · content-hash resync<br/>mtime breaks on a clone"]
   A51["51 · lock lease"]
   A53["53 · contentHash in manifest"]
-  A56["56 · StorageBackend seam"]
-  A58["58 · Workspace service"]
-  A59["59 · Commit engine"]
-  A60["60 · Publish to PR"]
-  A62["62 · Preview URL"]
-  A64["64 · R2 backend"]
-  A65["65 · Presigned uploads"]
-  A69["69 · Per-request root"]
-  A70["70 · Kill the process.env mutation"]
-  A74["74 · Multi-tenant sharding"]
+  A56["57 · StorageBackend seam"]
+  A58["59 · Workspace service"]
+  A59["60 · Commit engine"]
+  A60["61 · Publish to PR"]
+  A62["63 · Preview URL"]
+  A64["65 · R2 backend"]
+  A65["66 · Presigned uploads"]
+  A69["70 · Per-request root"]
+  A70["71 · Kill the process.env mutation"]
+  A74["75 · Multi-tenant sharding"]
 
   A48 --> A56
   A51 --> A58
@@ -295,7 +456,7 @@ flowchart LR
   A69 --> A74
 ```
 
-*Two items gate almost everything downstream: the sync-to-async conversion (48) and the seam it enables (56). Both live in Phase 0/1 and both improve the local app on their own. Item 70 is small but absolute — per-request roots are unsafe until the runtime `process.env` mutation is gone.*
+*Two items gate almost everything downstream: the sync-to-async conversion (48) and the seam it enables (57). Both live in Phase 0/1 and both improve the local app on their own. Item 71 is small but absolute — per-request roots are unsafe until the runtime `process.env` mutation is gone.*
 
 
 ### Phase 0 — Harden what exists (no web, all independently valuable)
@@ -313,6 +474,7 @@ Every item here improves the local app on its own merits and is a prerequisite f
 | 53 | Add `contentHash` to manifest entries — declared on `ManifestEntrySchema` **and** whitelisted in the reader's `parseManifest` | S |
 | 54 | Move the Google OAuth secret out of the data root into a secret store | S |
 | 55 | Decide and enforce: derivative generation never runs in the request path | S |
+| 56 | Extend the `baseUrl` seam so blob location is one env var (cheap now, saves a refactor later) | S |
 
 ### Phase 1 — Single-tenant web, just you
 
@@ -320,35 +482,35 @@ The goal: open a browser anywhere, edit nicb.at's workspace, publish a PR, see t
 
 | # | Item | Size |
 |---|---|---|
-| 56 | `StorageBackend` interface + local-filesystem implementation behind it, with capability flags (`atomicRename`, `reliableMtime`, `cheapList`, `signedUrls`) | L |
-| 57 | GitHub App: registration, OAuth sign-in, installation flow, token minting, live `permissions.push` verification | M |
-| 58 | Workspace service: clone to an opaque UUID dir, sticky single-writer, idle eviction, re-clone on demand | L |
-| 59 | Commit engine: local commit per save, debounced push (~30s), draft branch per session | L |
-| 60 | Publish: open PR, squash-merge, `delete_branch_on_merge`, abandoned-branch sweep | M |
-| 61 | Drift: `push` webhook → invalidate → notify open sessions; conditional-GET poll as safety net; "refresh workspace?" UI | M |
-| 62 | Deploy previews: `deployment_status` webhook (Vercel) with a Deployments-API poll fallback, surfaced on the PR in-app | S |
-| 63 | Deploy: Hetzner VPS, HTTPS, webhook endpoint with HMAC verification | M |
+| 57 | `StorageBackend` interface + local-filesystem implementation behind it, with capability flags (`atomicRename`, `reliableMtime`, `cheapList`, `signedUrls`) | L |
+| 58 | GitHub App: registration, OAuth sign-in, installation flow, token minting, live `permissions.push` verification | M |
+| 59 | Workspace service: clone to an opaque UUID dir, sticky single-writer, idle eviction, re-clone on demand | L |
+| 60 | Commit engine: local commit per save, debounced push (~30s), draft branch per session | L |
+| 61 | Publish: open PR, squash-merge, `delete_branch_on_merge`, abandoned-branch sweep | M |
+| 62 | Drift: `push` webhook → invalidate → notify open sessions; conditional-GET poll as safety net; "refresh workspace?" UI | M |
+| 63 | Deploy previews: `deployment_status` webhook (Vercel) with a Deployments-API poll fallback, surfaced on the PR in-app | S |
+| 64 | Deploy: scale-to-zero container platform, HTTPS, webhook endpoint with HMAC verification | M |
 
 ### Phase 2 — Blobs out of the repo
 
 | # | Item | Size |
 |---|---|---|
-| 64 | R2 backend behind `StorageBackend`; content-hash-keyed storage paths | M |
-| 65 | Presigned PUT direct from the browser; server mints URLs only, stays out of the byte path | M |
-| 66 | Signed-URL issuance for private workspaces (Worker or app-minted), batched per session; public `baseUrl` path for public repos | M |
-| 67 | `media-manager fetch-all` — rematerialize blobs locally from the manifest, so a clone is recoverable again | S |
-| 68 | Blob route returns 302 to CDN; proxy only as fallback | S |
+| 65 | R2 backend behind `StorageBackend`; content-hash-keyed storage paths | M |
+| 66 | Presigned PUT direct from the browser; server mints URLs only, stays out of the byte path | M |
+| 67 | Signed-URL issuance for private workspaces (Worker or app-minted), batched per session; public `baseUrl` path for public repos | M |
+| 68 | `media-manager fetch-all` — rematerialize blobs locally from the manifest, so a clone is recoverable again | S |
+| 69 | Blob route returns 302 to CDN; proxy only as fallback | S |
 
 ### Phase 3 — Two users, then many
 
 | # | Item | Size |
 |---|---|---|
-| 69 | `AsyncLocalStorage` per-request root; per-root layout-guard memo | S |
-| 70 | Kill `applyStorageEnv()`'s `process.env` mutation — per-tenant storage config (**blocker for tenancy**) | S |
-| 71 | Persistent store: users, sessions, installations, repos, workspaces, audit log | M |
-| 72 | Isolation hardening: UUID paths + realpath canonicalization, clone sandboxing, disk quotas, per-tenant rate limiting | M |
-| 73 | Revocation: `installation.deleted` / `installation_repositories.removed` handling | S |
-| 74 | Tenant→box registry and sharding | L |
+| 70 | `AsyncLocalStorage` per-request root; per-root layout-guard memo | S |
+| 71 | Kill `applyStorageEnv()`'s `process.env` mutation — per-tenant storage config (**blocker for tenancy**) | S |
+| 72 | Persistent store: users, sessions, installations, repos, workspaces, audit log | M |
+| 73 | Isolation hardening: UUID paths + realpath canonicalization, clone sandboxing, disk quotas, per-tenant rate limiting | M |
+| 74 | Revocation: `installation.deleted` / `installation_repositories.removed` handling | S |
+| 75 | Tenant→instance registry and sharding | L |
 
 ### Deferred, deliberately
 
@@ -362,16 +524,19 @@ The goal: open a browser anywhere, edit nicb.at's workspace, publish a PR, see t
 
 ## Open questions
 
-1. **What does the draft branch look like to a human?** One branch per session, or one long-lived branch per repo that Publish squashes and resets? The second keeps the ref count down and matches "I'm always editing my site."
-2. **What happens when you're editing locally *and* on the web?** Detect-and-prompt handles a stale workspace, but not the reverse — the web pushing while your local checkout is dirty. Possibly nothing to do beyond surfacing it.
-3. **Does the friend get their own installation, or collaborate on yours?** Changes whether phase 3's tenancy work is needed at phase 2.
-4. **Is the compression `derived/` tree committed or rebuilt?** Rebuilt is cleaner and keeps the repo small, but means the deployed site depends on a build step that has to run somewhere.
-5. **Public repos: skip R2 entirely?** If the site's images are public anyway, committing them to the repo is simpler — until the repo gets big. Worth deciding per-repo rather than globally.
+1. **Which container platform?** Fly.io is researched and fits well (volume forking removes the clone from the critical path; single-attach volumes give single-writer for free). **Cloud Run and Cloudflare Containers are not yet researched** — the run hit a limit. The deciding question for Cloud Run is whether session affinity is guaranteed or best-effort; if best-effort, it's disqualified. For Cloudflare, a Durable Object would give exact addressing but the container must do all the ExifTool/sharp work.
+2. **What does the draft branch look like to a human?** One branch per session, or one long-lived branch per repo that Publish squashes and resets? The second keeps the ref count down and matches "I'm always editing my site."
+3. **What happens when you're editing locally *and* on the web?** Detect-and-prompt handles a stale workspace, but not the reverse — the web pushing while your local checkout is dirty. Possibly nothing to do beyond surfacing it.
+4. **Does the friend get their own installation, or collaborate on yours?** Changes whether phase 3's tenancy work is needed at phase 2.
+5. **Is the compression `derived/` tree committed or rebuilt?** Rebuilt is cleaner and keeps the repo small, but means the deployed site depends on a build step that has to run somewhere.
+6. **Public repos: skip R2 entirely?** If the site's images are public anyway, committing them to the repo is simpler — until the repo gets big. Worth deciding per-repo rather than globally.
 
 ---
 
 ## Sources
 
-The five research briefs behind this document: GitHub write-path mechanics, filesystem-coupling audit of this codebase, hosting comparison, blob storage strategy, and auth/tenancy/security. The hosting brief is published separately at `https://claude.ai/code/artifact/ba25cb41-74de-45c9-bb5c-3b08443fe743`; the auth brief is at `scratchpad/github-auth-tenancy-brief.md`.
+Eight research briefs stand behind this document: GitHub write-path mechanics, filesystem-coupling audit of this codebase, hosting comparison, blob storage strategy, and auth/tenancy/security. The hosting brief is published separately at `https://claude.ai/code/artifact/ba25cb41-74de-45c9-bb5c-3b08443fe743`; the auth brief is at `scratchpad/github-auth-tenancy-brief.md`.
 
-Claims about GitHub limits, R2/S3 pricing, and platform behavior are sourced in those briefs. A few — GraphQL `createCommitOnBranch`'s practical file-count ceiling, and Range-request support on the Contents API — were confirmed by live testing rather than documentation, and could change without notice.
+**Still outstanding:** the Cloud Run and Cloudflare Containers comparison, which the session's search budget cut short. Everything in the hosting section reflects Fly.io's documented behavior only.
+
+Claims about GitHub limits, R2/S3 pricing, and platform behavior are sourced in those briefs; all prices were verified 2026-08-18 against primary vendor sources. A few — GraphQL `createCommitOnBranch`'s practical file-count ceiling, and Range-request support on the Contents API — were confirmed by live testing rather than documentation, and could change without notice.

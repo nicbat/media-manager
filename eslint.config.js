@@ -12,7 +12,18 @@ import svelte from 'eslint-plugin-svelte';
  */
 export default [
 	{
-		ignores: ['.svelte-kit/**', 'build/**', 'dist/**', 'node_modules/**']
+		// Generated output and throwaway scratch scripts are not app code — `scratchpad/` holds
+		// hand-written repro/capture snippets and `.screenshots/` is written by scripts/ui-capture.mjs
+		// (both are debugging aids, and `.screenshots/` is gitignored).
+		ignores: [
+			'.svelte-kit/**',
+			'build/**',
+			'dist/**',
+			'node_modules/**',
+			'.screenshots/**',
+			'scratchpad/**',
+			'test-data/**'
+		]
 	},
 	js.configs.recommended,
 	{
