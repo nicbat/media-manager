@@ -26,6 +26,8 @@
 	import { formatBytes } from '$lib/core/bytes.js';
 	import { ssimLabel } from '$lib/api/compression.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
+	import type { SavedSections } from '$lib/components/FileEditorPanel.svelte';
+	import { groupByDisplayValue, stringifyFieldValue } from '$lib/core/recordDisplay.js';
 	import BulkSetFieldDialog from '$lib/components/BulkSetFieldDialog.svelte';
 	import EntityRail from '$lib/components/rail/EntityRail.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
@@ -67,6 +69,8 @@
 	/** The solo class's full schema — drives the bulk "Set field…" value widgets (null outside a catalog). */
 	let catalogSchema = $state<SchemaDefinition | null>(null);
 	let catalogGroupBy = $state('');
+	/** The solo class's "Title by" field, kept so an autosave can re-render `title_value` locally. */
+	let catalogDisplayField = $state('');
 	let catalogLoadedFor: string | null = null;
 	/**
 	 * List sort (Item 9). `sortField`/`sortDir` are the **active** sort bound to the toolbar control;
@@ -352,6 +356,7 @@
 			catalogSchema = detail.schema;
 			catalogSchemaKeys = Object.keys(detail.schema).sort((a, b) => a.localeCompare(b));
 			catalogGroupBy = detail.config.gridGroupByField ?? '';
+			catalogDisplayField = detail.config.displayField ?? '';
 			// Per-class persisted sort; default last_modified desc (catalog rows have records).
 			sortField = detail.config.sortField || 'last_modified';
 			sortDir = detail.config.sortDir === 'asc' ? 'asc' : 'desc';
@@ -362,6 +367,7 @@
 			catalogSchema = null;
 			catalogSchemaKeys = [];
 			catalogGroupBy = '';
+			catalogDisplayField = '';
 			sortField = 'last_modified';
 			sortDir = 'desc';
 			verbose = false;
@@ -406,7 +412,7 @@
 							? verboseFields.filter((k) => !isFileInfoKey(k))
 							: undefined
 				});
-				files = data.files;
+				applyFiles(data.files, quiet);
 			} else {
 				catalogLoadedFor = null;
 				// Outside a catalog the sort comes from the remembered media-wide hub default.
@@ -427,11 +433,79 @@
 					sort: sortField || undefined,
 					dir: sortDir
 				});
-				files = data.files;
+				applyFiles(data.files, quiet);
 			}
 		} finally {
 			if (!quiet) loading = false;
 		}
+	}
+
+	/**
+	 * Swap in a freshly fetched page of rows, **keeping the open editor's row object untouched** on a
+	 * background (quiet) refresh.
+	 *
+	 * A quiet refetch fires shortly after every field autosave, so its response is routinely older than
+	 * what the person is still typing; dropping it onto the open row would undo {@link patchFileRow}'s
+	 * optimistic update and hand the editor panel stale values. The open row instead stays exactly as
+	 * the panel and the patch left it, and catches up with the server when the editor closes (see the
+	 * `onclose` handler) — the same guard the Records hub applies to its selected row.
+	 *
+	 * @param next - The rows just returned by the list endpoint.
+	 * @param quiet - True for a background refresh; a user-initiated load always takes the server's word.
+	 */
+	function applyFiles(next: FileItem[], quiet: boolean) {
+		const openId = editorFileId;
+		if (!quiet || !openId) {
+			files = next;
+			return;
+		}
+		const open = files.find((f) => f.id === openId);
+		files = open ? next.map((f) => (f.id === openId ? open : f)) : next;
+	}
+
+	/**
+	 * Re-render one grid row from a record the editor just autosaved, without a refetch.
+	 *
+	 * This is the Files counterpart of the Records hub's `projectRecordRow` patch: the edited field may
+	 * be the catalog's "Title by" or one of the verbose fields, both of which the server normally
+	 * resolves. Recomputing them here with the same `stringifyFieldValue` the server uses keeps the tile
+	 * live while the editor is open, so nothing has to reload the list mid-sentence.
+	 *
+	 * `record`-type fields are deliberately left alone: the server renders them as the *referenced
+	 * record's title*, and a client patch only holds the raw id — showing a UUID would be worse than
+	 * showing the previous title for the few seconds until the next full load.
+	 *
+	 * @param saved - The blob id plus the class records that were just persisted.
+	 */
+	function patchFileRow(saved: SavedSections) {
+		if (!soloClass) return;
+		const section = saved.sections.find((sec) => sec.classId === soloClass);
+		if (!section) return;
+		const idx = files.findIndex((f) => f.id === saved.fileId);
+		if (idx < 0) return;
+		const { schema, record } = section;
+		const renderable = (key: string) => !!schema[key] && schema[key].type !== 'record';
+		const row = { ...files[idx] };
+
+		if (catalogDisplayField && renderable(catalogDisplayField)) {
+			const title = stringifyFieldValue(schema, catalogDisplayField, record[catalogDisplayField]);
+			if (title) row.title_value = title;
+			else delete row.title_value;
+		}
+		if (catalogGroupBy && renderable(catalogGroupBy)) {
+			const group = groupByDisplayValue(schema, catalogGroupBy, record[catalogGroupBy]);
+			if (group !== undefined) row.group_by_value = group;
+		}
+		if (verbose && verboseFields.length) {
+			const values = { ...(row.field_values ?? {}) };
+			for (const key of verboseFields) {
+				if (!isFileInfoKey(key) && renderable(key)) {
+					values[key] = stringifyFieldValue(schema, key, record[key]) ?? '';
+				}
+			}
+			row.field_values = values;
+		}
+		files[idx] = row;
 	}
 
 	/**
@@ -1333,12 +1407,19 @@
 			total={files.length}
 			onPrev={() => gotoFile(-1)}
 			onNext={() => gotoFile(1)}
-			onclose={() => (editorFileId = null)}
-			onSaved={() => {
-				// A field autosave: nothing structural changed, but the edited field may be the catalog
-				// title-by / a verbose field (server-resolved), or a linked `record`-field that propagates
-				// to the partner Records type. Debounced bump → this page's own quiet refetch + other tabs /
-				// pickers, without disturbing the open editor or storming on rapid edits.
+			onclose={() => {
+				editorFileId = null;
+				// With nothing open, `applyFiles` no longer protects a row — so this is where the row we
+				// were just editing picks up the server's exact rendering (resolved `record` refs and all).
+				void loadFiles({ quiet: true });
+			}}
+			onSaved={(saved) => {
+				// A field autosave. Re-render the edited tile locally (the field may be the catalog's
+				// title-by or a verbose field) rather than refetching — a refetch would replace the row
+				// objects under the open panel. The debounced bump still goes out for everything a local
+				// patch can't know about: linked `record`-field propagation into the Records sub-app, other
+				// tabs, and mounted pickers.
+				patchFileRow(saved);
 				scheduleReferenceRefresh();
 			}}
 			onStructureChanged={async () => {

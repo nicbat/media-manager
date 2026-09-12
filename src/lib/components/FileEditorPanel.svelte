@@ -1,3 +1,19 @@
+<script module lang="ts">
+	import type { SchemaDefinition } from '$lib/core/types.js';
+
+	/**
+	 * What an autosave hands back to the host, so it can patch the edited grid row **in place** instead
+	 * of refetching the list. A refetch is what used to make the host reassign `files`, which changed
+	 * this component's `file` prop identity, which re-ran the reload effect and unmounted every input
+	 * out from under the caret.
+	 */
+	export type SavedSections = {
+		/** The blob the records belong to — NOT necessarily the open one (see `flushLeavingSync`). */
+		fileId: string;
+		sections: { classId: string; schema: SchemaDefinition; record: Record<string, unknown> }[];
+	};
+</script>
+
 <script lang="ts">
 	import {
 		apiBlobUrl,
@@ -21,6 +37,7 @@
 		type FilePresetCompression
 	} from '$lib/api/compression.js';
 	import { formatTimestamp } from '$lib/core/datetime.js';
+	import { untrack } from 'svelte';
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
 	import EditorPanelShell from './EditorPanelShell.svelte';
@@ -29,7 +46,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { FileText, Loader2, Check, ChevronDown, ChevronRight } from 'lucide-svelte';
-	import type { ClassSummary, FileItem, SchemaDefinition, ClassConfig } from '$lib/core/types.js';
+	import type { ClassSummary, FileItem, ClassConfig } from '$lib/core/types.js';
 
 	/** One editable class section: schema/config plus the blob's (always-present) record. */
 	type Section = {
@@ -47,10 +64,10 @@
 	 * and unload, with a "Saving…/Saved" status in the header. No explicit per-section Save button.
 	 *
 	 * Two distinct host callbacks keep autosave from flashing/clobbering the grid: `onSaved` (a field
-	 * autosave — the grid tile is unaffected, so the host must NOT refetch the file list) vs
-	 * `onStructureChanged` (rename / add / remove-to-class / metadata strip — the tile label, chips, or
-	 * counts changed, so the host reloads). Refetching on every keystroke used to reassign the `file`
-	 * prop and reload `sections` mid-typing, dropping characters.
+	 * autosave — the host patches the one edited row from the payload and must NOT refetch the file
+	 * list) vs `onStructureChanged` (rename / add / remove-to-class / metadata strip — the tile label,
+	 * chips, or counts changed, so the host reloads). Refetching on every keystroke used to reassign the
+	 * `file` prop, which re-ran the reload effect and unmounted the inputs mid-sentence.
 	 */
 	let {
 		file,
@@ -75,8 +92,11 @@
 		onPrev?: () => void;
 		onNext?: () => void;
 		onclose: () => void;
-		/** A field autosave settled — the grid tile is unchanged, so the host must NOT refetch. */
-		onSaved?: () => void;
+		/**
+		 * A field autosave settled. The host should patch the named row from `saved` (no refetch — a
+		 * refetch here reassigns the row objects and remounts this panel's inputs mid-typing).
+		 */
+		onSaved?: (saved: SavedSections) => void;
 		/** Membership/name/metadata changed — the host should refresh the grid + class meta. */
 		onStructureChanged: () => void;
 	} = $props();
@@ -105,6 +125,22 @@
 	/** The section is collapsible; its header keeps the one-line summary visible when collapsed. */
 	let compressionOpen = $state(true);
 
+	/**
+	 * The open blob's identity, pulled out as plain strings.
+	 *
+	 * Load-bearing: a `$derived` re-runs its dependents only when its **value** changes, whereas reading
+	 * `file.id` inside an effect subscribes to the whole `file` prop — and the host hands down a fresh
+	 * `FileItem` object every time it refetches the list, even for the same unchanged blob. Keying the
+	 * reload effect on these strings is what stops a background refresh from tearing down the inputs
+	 * while someone is typing in them.
+	 */
+	const fileId = $derived(file.id);
+	const fileName = $derived(file.file_name);
+	/** The blob `sections` currently describe — `null` until the first load settles. */
+	let loadedFor: string | null = null;
+	/** Monotonic load counter; a response whose ticket is stale is dropped instead of applied. */
+	let loadSeq = 0;
+
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
 	const isImage = $derived(hasAllowedImageExtension(file.file_name));
@@ -128,21 +164,59 @@
 	// the grid stable so typing never stutters.
 	const autosave = createAutosave({ isDirty: () => dirty, save: saveDirtySections });
 
-	async function load() {
-		loading = true;
+	/**
+	 * (Re)fetch this blob's class sections.
+	 *
+	 * Two rules keep a reload from disturbing someone mid-sentence:
+	 * - **The loading skeleton is only for a different blob.** Reloading the *same* blob (a schema
+	 *   change, an add/remove-to-class) leaves the fields mounted, because `{#if loading}` swaps the
+	 *   whole form out and a swapped-out `<textarea>` loses focus — the user has to click back in.
+	 * - **Unsaved edits win.** A section still dirty when the response lands keeps its in-memory record;
+	 *   the server copy would be older than what's on screen, so applying it would eat keystrokes.
+	 *
+	 * @param fid - The blob to load. Passed explicitly (never read off `file` inside an effect) so the
+	 *   caller controls the reactive dependency, and so a response can be matched to its request.
+	 */
+	async function load(fid: string) {
+		const sameBlob = loadedFor === fid;
+		if (!sameBlob) {
+			sections = [];
+			loading = true;
+		}
+		const seq = ++loadSeq;
 		try {
-			const data = await apiGetFileClasses(file.id);
-			sections = data.classes.map((c) => ({
-				...c,
-				record: (c.record ?? { id: file.id }) as Record<string, unknown>
-			}));
-			savedSnapshots = Object.fromEntries(sections.map((s) => [s.id, snapshotOf(s)]));
+			const data = await apiGetFileClasses(fid);
+			// A newer load (or a file switch) started while this one was in flight — drop the response.
+			if (seq !== loadSeq) return;
+			const previous = new Map(sections.map((sec) => [sec.id, sec]));
+			const dirtyIds = new Set(
+				sameBlob
+					? sections
+							.filter((sec) => snapshotOf(sec) !== savedSnapshots[sec.id])
+							.map((sec) => sec.id)
+					: []
+			);
+			sections = data.classes.map((c) => {
+				const prev = dirtyIds.has(c.id) ? previous.get(c.id) : undefined;
+				// Take the fresh schema/config either way; keep the unsaved record when there is one.
+				return {
+					...c,
+					record: prev ? prev.record : ((c.record ?? { id: fid }) as Record<string, unknown>)
+				};
+			});
+			savedSnapshots = Object.fromEntries(
+				sections.map((sec) => [
+					sec.id,
+					dirtyIds.has(sec.id) ? (savedSnapshots[sec.id] ?? '') : snapshotOf(sec)
+				])
+			);
+			loadedFor = fid;
 		} finally {
-			loading = false;
+			if (seq === loadSeq) loading = false;
 		}
 		// Membership decides which presets this blob is subscribed to, so the compression detail is
 		// reloaded alongside the sections (open, refresh, add/remove-to-class) rather than once per file.
-		void loadCompression(file.id);
+		void loadCompression(fid);
 	}
 
 	/**
@@ -152,19 +226,19 @@
 	 *   on the newly-opened file.
 	 */
 	async function loadCompression(fid: string) {
-		if (!mayHaveDerivatives(file.file_name)) {
+		if (!mayHaveDerivatives(fileName)) {
 			compression = null;
 			return;
 		}
 		compressionLoading = true;
 		try {
 			const detail = await apiGetFileCompression(fid);
-			if (file.id === fid) compression = detail;
+			if (fileId === fid) compression = detail;
 		} catch (e) {
 			console.error(e);
-			if (file.id === fid) compression = null;
+			if (fileId === fid) compression = null;
 		} finally {
-			if (file.id === fid) compressionLoading = false;
+			if (fileId === fid) compressionLoading = false;
 		}
 	}
 
@@ -218,13 +292,16 @@
 	 */
 	async function saveDirtySections() {
 		if (!dirty) return;
+		const fid = fileId;
+		const saved: SavedSections['sections'] = [];
 		for (const s of sections) {
 			if (snapshotOf(s) !== savedSnapshots[s.id]) {
-				await apiUpdateClassRecord(s.id, file.id, patchFor(s));
+				await apiUpdateClassRecord(s.id, fid, patchFor(s));
 				savedSnapshots[s.id] = snapshotOf(s);
+				saved.push({ classId: s.id, schema: s.schema, record: { ...s.record } });
 			}
 		}
-		onSaved?.();
+		onSaved?.({ fileId: fid, sections: saved });
 	}
 
 	/**
@@ -237,10 +314,12 @@
 		for (const s of sections) {
 			if (snapshotOf(s) !== savedSnapshots[s.id]) {
 				const snap = snapshotOf(s);
+				const record = { ...s.record };
 				void apiUpdateClassRecord(s.id, fid, patchFor(s))
 					.then(() => {
 						savedSnapshots[s.id] = snap;
-						onSaved?.();
+						// `fid`, not the now-open blob: this is the OUTGOING file's flush.
+						onSaved?.({ fileId: fid, sections: [{ classId: s.id, schema: s.schema, record }] });
 					})
 					.catch((e) => console.error('Autosave on leave failed', e));
 			}
@@ -269,30 +348,37 @@
 		return { base: name.slice(0, dot), ext: name.slice(dot) };
 	}
 
+	// Seed the split rename boxes from the current filename. Keyed on the NAME (a string), so an
+	// external rename refreshes them while an unrelated list refetch — same name, new object — does not
+	// wipe out a half-typed rename.
 	$effect(() => {
-		// reload whenever the selected file changes; flush the outgoing blob's edits first
-		const fid = file.id;
-		const parts = splitFilename(file.file_name);
+		const parts = splitFilename(fileName);
 		baseName = parts.base;
 		ext = parts.ext;
 		renameError = null;
+	});
+
+	// Reload whenever a DIFFERENT blob is selected; flush the outgoing blob's edits first. Keyed on
+	// `fileId` (a string), never on the `file` object — see the note on `fileId`.
+	$effect(() => {
+		const fid = fileId;
 		extCheck = null;
 		// Drop the previous blob's figures immediately — a stale saving next to a new photo is worse
 		// than a blank line while the fetch lands.
 		compression = null;
-		void apiCheckFileExtension(file.id)
+		void apiCheckFileExtension(fid)
 			.then((c) => {
-				if (file.id === fid) extCheck = c;
+				if (fileId === fid) extCheck = c;
 			})
 			.catch(() => {});
 		lightboxOpen = false;
-		load();
+		void load(fid);
 		return () => flushLeavingSync(fid);
 	});
 
 	// Best-effort flush if the tab is closed mid-edit.
 	$effect(() => {
-		const handler = () => flushLeavingSync(file.id);
+		const handler = () => flushLeavingSync(untrack(() => fileId));
 		window.addEventListener('beforeunload', handler);
 		return () => window.removeEventListener('beforeunload', handler);
 	});
@@ -308,8 +394,9 @@
 	});
 
 	$effect(() => {
-		// reload sections on external request (e.g. a class schema changed while open)
-		if (refresh) load();
+		// Reload sections on external request (e.g. a class schema changed while open). `untrack` keeps
+		// this effect's only dependency `refresh`, so it can't double-fire on a file switch.
+		if (refresh) void load(untrack(() => fileId));
 	});
 
 	/** Whether a `file`- or `record`-field key is a broken reference on this section's record. */
@@ -371,13 +458,13 @@
 		if (!addClassId) return;
 		await apiAddMembers(addClassId, [file.id]);
 		addClassId = '';
-		await load();
+		await load(file.id);
 		onStructureChanged();
 	}
 
 	async function removeFromClass(classId: string) {
 		await apiRemoveMembers(classId, [file.id]);
-		await load();
+		await load(file.id);
 		onStructureChanged();
 	}
 </script>

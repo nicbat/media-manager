@@ -2,6 +2,8 @@
 	import type { FieldDefinition, UrlValue, ListItemType } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import StableInput from './StableInput.svelte';
+	import { stableValue } from '$lib/actions/stableValue.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
@@ -234,10 +236,10 @@
 		}}
 	/>
 {:else if def.type === 'number'}
-	<Input
+	<StableInput
 		{id}
 		type="number"
-		value={typeof value === 'number' ? value : (value ?? '')}
+		value={typeof value === 'number' ? value : ((value as string | null) ?? '')}
 		oninput={(e) => (value = e.currentTarget.value === '' ? 0 : Number(e.currentTarget.value))}
 		onblur={() => oncommit?.()}
 	/>
@@ -284,14 +286,14 @@
 		{#each listItems as item, i (i)}
 			{@const u = normalizeUrlValue(item)}
 			<div class="flex items-center gap-2">
-				<Input
+				<StableInput
 					class="w-32 shrink-0"
 					placeholder="Display name"
 					value={u.display_name}
 					oninput={(e) => updateUrlItem(i, { display_name: e.currentTarget.value })}
 					onblur={() => oncommit?.()}
 				/>
-				<Input
+				<StableInput
 					class="min-w-0 flex-1"
 					type="url"
 					placeholder="https://…"
@@ -369,14 +371,14 @@
 	</div>
 {:else if def.type === 'url'}
 	<div class="flex items-center gap-2">
-		<Input
+		<StableInput
 			class="w-32 shrink-0"
 			placeholder="Display name"
 			value={url.display_name}
 			oninput={(e) => setUrl({ display_name: e.currentTarget.value })}
 			onblur={() => oncommit?.()}
 		/>
-		<Input
+		<StableInput
 			{id}
 			type="url"
 			class="min-w-0 flex-1"
@@ -469,14 +471,19 @@
 		{oncommit}
 	/>
 {:else}
+	<!--
+		The value is applied via `stableValue` rather than a `value={...}` attribute: this is the field
+		people write sentences in, and a controlled re-render while it has focus would move the caret to
+		the end (and drop anything typed since the render's data was fetched).
+	-->
 	<textarea
 		{id}
 		rows="1"
 		use:autogrow={value}
+		use:stableValue={stringValue}
 		onkeydown={(e) => blurSaveOnEnter(e)}
 		onblur={() => oncommit?.()}
 		class="flex w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-		value={stringValue}
 		oninput={(e) => (value = e.currentTarget.value)}
 	></textarea>
 {/if}

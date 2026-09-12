@@ -76,6 +76,8 @@
 
 	/** Identifies the record whose form is currently in `formValues` (for flush-on-leave). */
 	let loaded = $state<{ typeId: string; recordId: string } | null>(null);
+	/** Monotonic load counter; a response whose ticket is stale is dropped instead of applied. */
+	let loadSeq = 0;
 
 	/** Ordered editable keys (name first for display) — shared helper. */
 	const getOrderedEditableKeys = schemaUserFieldKeys;
@@ -149,23 +151,44 @@
 	// `onchanged(updated)` — no refetch — so typing never stutters.
 	const autosave = createAutosave({ isDirty: () => isDirty, save: doSave });
 
+	/**
+	 * (Re)fetch the open record and its schema.
+	 *
+	 * A reload for the record already on screen (the `refresh` bump after a schema edit) keeps the form
+	 * mounted and keeps any unsaved edits: `{#if loading}` swaps the whole field list out, and a
+	 * swapped-out input loses focus — which reads to the user as being kicked out of the box they were
+	 * typing in. Only a genuine record switch shows the skeleton. A stale response (a switch raced the
+	 * fetch) is dropped rather than applied.
+	 */
 	async function load() {
-		loading = true;
+		const sameRecord = loaded?.typeId === typeId && loaded?.recordId === recordId;
+		if (!sameRecord) loading = true;
+		const seq = ++loadSeq;
 		try {
 			const [s, r] = await Promise.all([
 				apiGetSchemaForType(typeId),
 				apiGetRecordByIdForType(typeId, recordId)
 			]);
+			if (seq !== loadSeq) return;
+			const keep = sameRecord && isDirty ? { ...formValues } : null;
 			schema = s;
 			record = r as Record<string, unknown>;
 			initFormValues(s, record);
-			lastSavedPatch = buildPatch();
+			if (keep) {
+				// Unsaved edits are newer than anything the server just handed back — keep them, but only
+				// for keys the (possibly just-changed) schema still has.
+				for (const key of getOrderedEditableKeys(s)) {
+					if (key in keep) formValues[key] = keep[key];
+				}
+			} else {
+				lastSavedPatch = buildPatch();
+			}
 			loaded = { typeId, recordId };
 		} catch (e) {
 			console.error(e);
 			toast.error('Failed to load record');
 		} finally {
-			loading = false;
+			if (seq === loadSeq) loading = false;
 		}
 	}
 
