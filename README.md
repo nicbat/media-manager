@@ -12,7 +12,7 @@ Local-first data manager built with SvelteKit + Svelte 5. Manages metadata for m
 
 ## Running it
 
-The shipped app is a **Node server** (SvelteKit’s adapter-node). The easiest way to run it is the **`media-manager`** CLI, which discovers your data root, **builds on demand**, binds a **free ephemeral port** (so it never collides with another dev server), and opens the browser when ready.
+The shipped app is a **Node server** (SvelteKit’s adapter-node). The easiest way to run it is the **`media-manager`** CLI, which discovers your data root, uses the **prepared editor build**, binds a **free ephemeral port** (so it never collides with another dev server), and opens the browser when ready.
 
 ### Point it at a data folder
 
@@ -21,7 +21,7 @@ npm install
 node bin/media-manager.js /absolute/path/to/my-data
 ```
 
-First run builds `build/` automatically (`--rebuild` forces a fresh build). Pass `--no-open` to skip the browser, or `--port N` to pin a port instead of the ephemeral default.
+`npm install` prepares the editor (`build/`) and reader (`dist/reader/`). In a source checkout, a missing editor build is also built on first run (`--rebuild` forces a fresh build). Pass `--no-open` to skip the browser, or `--port N` to pin a port instead of the ephemeral default.
 
 ### Zero-config: a `media-manager.config.json`
 
@@ -41,7 +41,7 @@ Drop a config file at (or above) your working directory and run `media-manager` 
 - `media-manager [serve]` — run the server (default).
 - `media-manager init [dir]` — scaffold a **new empty** workspace + a starter `media-manager.config.json`.
 - `media-manager config [dir]` — write a `media-manager.config.json` for a workspace you **already have** (no scaffolding; `--force` to overwrite an existing one).
-- `media-manager build` — (re)build `build/` and exit, **without** serving (e.g. after a `git pull`).
+- `media-manager build` — (re)build `build/` in a **source checkout** and exit, **without** serving (e.g. after a `git pull`).
 - `media-manager doctor` — diagnose the resolved root / config / build **without** starting the server.
 
 ## Development server
@@ -117,7 +117,7 @@ The folder name (e.g. `images`) is the **media type id**; the display name is in
 media-manager [serve] [root] [--port N] [--no-open] [--rebuild] [--body-size-limit N]
 media-manager init [dir]            # scaffold a new empty workspace + config
 media-manager config [dir]          # write a config for a workspace you already have (--force to overwrite)
-media-manager build                 # (re)build build/ and exit, without serving
+media-manager build                 # (re)build a source checkout and exit, without serving
 media-manager doctor                # diagnose root / config / build, without starting
 media-manager --help
 ```
@@ -126,7 +126,7 @@ Flags:
 
 - `--port N` — pin a fixed port (default: an ephemeral OS-assigned port)
 - `--no-open` — do not open a browser when the server starts
-- `--rebuild` — force a fresh `build/` even if one already exists
+- `--rebuild` — force a fresh `build/` in a source checkout
 - `--force` — (`init` / `config`) overwrite an existing `media-manager.config.json`
 - `--body-size-limit N` — request body size limit in bytes (uploads)
 - `-h`, `--help` — show usage
@@ -136,7 +136,7 @@ Flags:
 Publishing to the npm registry is a later phase — until then `npx media-manager` from the registry isn’t available, but you can run it through `npx` from a local checkout or as a dependency of another project:
 
 ```bash
-# A) from a clone of this repo (build is created on first run):
+# A) from a clone of this repo (npm install prepares the build):
 git clone git@github.com:nicbat/media-manager.git
 cd media-manager && npm install
 npx media-manager /path/to/my-data        # runs the package's own bin
@@ -147,15 +147,15 @@ npx media-manager /path/to/my-data        # runs the package's own bin
 npm install
 npx media-manager
 
-# C) straight from GitHub, no clone — npx fetches the repo and builds on first run:
+# C) straight from GitHub, no clone — npm prepares the build before installing:
 npx github:nicbat/media-manager          # if the repo is public
 npx git+ssh://git@github.com/nicbat/media-manager.git   # private repo: uses your SSH key
 npx github:nicbat/media-manager#v1.0.0   # pin a tag/branch/commit for reproducibility
 ```
 
-Route **C** clones into npx’s cache, installs deps (incl. dev deps, so `prepare` runs), then the CLI **builds on demand** since `build/` isn’t committed — so the first run is slow, later runs reuse the cache (bump the `#ref` or `npx --ignore-existing` to refresh).
+Route **C** clones into npm's cache and installs the build dependencies there. The `prepare` lifecycle builds **both the editor and reader before npm applies the package's `files` allowlist**. Git dependencies (including `github:nicbat/media-manager#<ref>` in another project's `package.json`) and `npm pack` artifacts therefore contain `build/` and `dist/reader/`; starting the installed CLI requires no source tree or Vite build in the host project. Git installation requires lifecycle scripts to be enabled and takes longer while these builds run. Pin a tag or commit that includes this fix; older tags such as `v0.6.1` retain the packaging bug.
 
-Once published, `npx media-manager` will fetch the **prebuilt** package from npm — consumers won’t build at all (the build ships in the tarball via `prepublishOnly` + `files`).
+Registry/tarball consumers use those same prepared outputs. `media-manager build` and `--rebuild` are for full source checkouts with development dependencies installed. If an installed package lacks `build/index.js`, `doctor` fails and the CLI explains how to reinstall a complete package or build a full checkout. An empty `build/` directory does not count as a build.
 
 **Warning:** default upload limits are for **local use only**. If you expose the server on a network, set a smaller limit or run behind a reverse proxy.
 
@@ -172,3 +172,4 @@ Once published, `npx media-manager` will fetch the **prebuilt** package from npm
 - `npm run check`: svelte check
 - `npm run lint`: prettier + eslint
 - `npm run test`: unit tests (vitest)
+- `npm run test:package`: clean Git and tarball consumer installs, reader imports, and CLI HTTP smoke checks against disposable fixture copies (requires Git, npm, and registry access; never publishes)
