@@ -8,7 +8,7 @@ node_modules
 /.svelte-kit
 /build
 
-# Reader library build (media-manager/reader) — built on demand / at publish (prepublishOnly)
+# Reader library build (media-manager/reader) — built by prepare before Git installs / packing
 /dist
 
 # OS

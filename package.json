@@ -34,9 +34,8 @@
 		"build": "vite build",
 		"build:reader": "tsc -p tsconfig.reader.json && node -e \"require('fs').copyFileSync('src/lib/reader/posts.css','dist/reader/posts.css')\"",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync && npm run build:reader",
+		"prepare": "svelte-kit sync && npm run build && npm run build:reader",
 		"start": "node build",
-		"prepublishOnly": "npm run build && npm run build:reader",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
@@ -45,6 +44,7 @@
 		"lint": "npm run lint:prettier && npm run lint:eslint",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:package": "node --test scripts/package.test.mjs",
 		"test:serve": "node scripts/serve-test.mjs",
 		"upgrade-data": "node scripts/upgrade-data.mjs",
 		"release": "node scripts/release.mjs"

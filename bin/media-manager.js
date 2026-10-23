@@ -28,8 +28,8 @@ import { fileURLToPath } from 'node:url';
  * Pass `--port N` (or export `PORT`) to pin.
  *
  * Build (Item 30): if `build/` is absent it is built on demand; `--rebuild` forces a fresh build.
- * When this package is published, `build/` ships in the tarball, so consumers never build — the
- * on-demand path only fires in a git-clone / local-dep checkout.
+ * Git dependencies and packed installs ship `build/` (built by `prepare` before packing).
+ * Build-on-demand is only available in a source checkout, never in a source-stripped package.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -310,7 +310,7 @@ Usage:
   media-manager init [dir]                 Scaffold a NEW empty workspace + config
   media-manager config [dir]               Write a config for a workspace you ALREADY have
   media-manager export <dest>              Copy the workspace + reunite blobs into one folder
-  media-manager build                      (Re)build build/ and exit, without serving
+  media-manager build                      (Re)build a source checkout and exit, without serving
   media-manager doctor                     Diagnose root / config / build / assets (no server)
 
 Root resolution (serve · doctor · export):
@@ -326,7 +326,7 @@ Static assets (optional, in ${CONFIG_NAME}):
 Options:
   --port N             Pin a fixed port (default: an ephemeral OS-assigned port)
   --no-open            Do not open the browser on start
-  --rebuild            Force a fresh build even if build/ already exists
+  --rebuild            Force a fresh build in a source checkout
   --force              (init · config) overwrite an existing ${CONFIG_NAME}
   --body-size-limit N  Upload request body size limit in bytes (default ~100 MiB)
   -h, --help           Show this help
@@ -357,6 +357,28 @@ function printNoRoot() {
 // Build-on-demand
 // ---------------------------------------------------------------------------
 
+/** Whether the adapter-node entry point is present (an empty build/ is not a build). */
+function hasBuild() {
+	return fs.existsSync(path.join(buildPath, 'index.js'));
+}
+
+/** Whether this is a source checkout with the inputs required by this project's build script. */
+function hasBuildSource() {
+	return ['src/app.html', 'vite.config.ts', 'svelte.config.js'].every((file) =>
+		fs.existsSync(path.join(pkgRoot, file))
+	);
+}
+
+/** Explain how to recover an incomplete installed package without invoking Vite in the host site. */
+function printBuildGuidance() {
+	console.error(
+		'[media-manager] This installed package does not include the editor source needed to rebuild.\n' +
+			'  Reinstall media-manager from a fixed Git ref or a package containing build/index.js.\n' +
+			'  Git installs must allow the prepare lifecycle script to build the editor before packing.\n' +
+			'  To build manually, use a full media-manager source checkout, run npm ci, then npm run build.'
+	);
+}
+
 /**
  * Ensure the SvelteKit node build exists, building it once on demand when absent (or always when
  * `--rebuild`). Exits the process on build failure.
@@ -364,8 +386,16 @@ function printNoRoot() {
  * @param {boolean} force - Rebuild even if `build/` already exists.
  */
 function ensureBuilt(force) {
-	const exists = fs.existsSync(buildPath);
-	if (exists && !force) return;
+	if (hasBuild() && !force) return;
+	if (!hasBuildSource()) {
+		console.error(
+			hasBuild()
+				? '[media-manager] Cannot rebuild this installed package.'
+				: '[media-manager] Missing editor build (build/index.js).'
+		);
+		printBuildGuidance();
+		process.exit(1);
+	}
 	console.log(
 		force ? '[media-manager] building…' : '[media-manager] build/ not found — building once…'
 	);
@@ -374,9 +404,9 @@ function ensureBuilt(force) {
 		stdio: 'inherit',
 		shell: process.platform === 'win32'
 	});
-	if (res.status !== 0) {
-		console.error('[media-manager] Build failed.');
-		process.exit(res.status ?? 1);
+	if (res.status !== 0 || !hasBuild()) {
+		console.error('[media-manager] Build failed — build/index.js is required.');
+		process.exit(res.status || 1);
 	}
 }
 
@@ -706,13 +736,15 @@ function doctor() {
 		console.log('· assets      classic mode — blobs in <root>/media/files');
 	}
 
-	const built = fs.existsSync(buildPath);
+	const built = hasBuild();
+	const canBuild = hasBuildSource();
 	console.log(
-		`${built ? '✔' : '!'} build       ${built ? 'present' : 'missing — will build on first serve (or --rebuild)'}`
+		`${built ? '✔' : '!'} build       ${built ? 'present' : canBuild ? 'missing — will build on first serve (or --rebuild)' : 'missing — incomplete installed package'}`
 	);
+	if (!built && !canBuild) printBuildGuidance();
 	console.log('✔ port        ephemeral (OS-assigned; pin with --port N)');
 
-	process.exit(rootExists && assetsProblems === 0 ? 0 : 1);
+	process.exit(rootExists && assetsProblems === 0 && (built || canBuild) ? 0 : 1);
 }
 
 /** `build`: (re)build the Node server (`build/`) and exit, without starting the server. */
