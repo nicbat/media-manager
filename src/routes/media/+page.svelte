@@ -605,7 +605,10 @@
 		const unsub = refreshTrigger.subscribe((n) => {
 			if (n !== prev) {
 				prev = n;
-				if (activeTypeId && !isGlobals) loadRecords({ quiet: true });
+				if (activeTypeId && !isGlobals) {
+					loadRecords({ quiet: true });
+					editorRefresh++;
+				}
 			}
 		});
 		return unsub;

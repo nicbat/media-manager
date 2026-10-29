@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { dirtyFieldPatch } from '$lib/core/dirtyPatch.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -78,6 +80,11 @@
 	let loaded = $state<{ typeId: string; recordId: string } | null>(null);
 	/** Monotonic load counter; a response whose ticket is stale is dropped instead of applied. */
 	let loadSeq = 0;
+	// Nonreactive coordination only: pending writes must not trigger load effects.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const pendingWrites = new Map<string, Promise<void>>();
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const pendingFields = new Map<string, string[]>();
 
 	/** Ordered editable keys (name first for display) — shared helper. */
 	const getOrderedEditableKeys = schemaUserFieldKeys;
@@ -165,23 +172,33 @@
 		if (!sameRecord) loading = true;
 		const seq = ++loadSeq;
 		try {
+			// Revisiting an entity must observe its queued outgoing snapshot, not stale disk data.
+			await pendingWrites.get(`${typeId}/${recordId}`)?.catch(() => {});
+			if (seq !== loadSeq) return;
 			const [s, r] = await Promise.all([
 				apiGetSchemaForType(typeId),
 				apiGetRecordByIdForType(typeId, recordId)
 			]);
 			if (seq !== loadSeq) return;
-			const keep = sameRecord && isDirty ? { ...formValues } : null;
+			const patch = buildPatch();
+			const keep =
+				sameRecord && isDirty
+					? Object.fromEntries(
+							Object.entries(formValues).filter(
+								([key]) => JSON.stringify(patch[key]) !== JSON.stringify(lastSavedPatch[key])
+							)
+						)
+					: null;
 			schema = s;
 			record = r as Record<string, unknown>;
 			initFormValues(s, record);
+			lastSavedPatch = buildPatch();
 			if (keep) {
 				// Unsaved edits are newer than anything the server just handed back — keep them, but only
 				// for keys the (possibly just-changed) schema still has.
 				for (const key of getOrderedEditableKeys(s)) {
 					if (key in keep) formValues[key] = keep[key];
 				}
-			} else {
-				lastSavedPatch = buildPatch();
 			}
 			loaded = { typeId, recordId };
 		} catch (e) {
@@ -192,47 +209,73 @@
 		}
 	}
 
+	/** Promise tail serializing snapshots so a late response cannot reorder disk writes. */
+	let writeTail: Promise<unknown> = Promise.resolve();
 	/**
-	 * Persist the current edits if dirty. Advances the saved baseline and hands the host the updated
-	 * record (patch-in-place, no refetch). Throws on failure — {@link createAutosave} owns the
-	 * status/saving/toast bookkeeping.
+	 * Capture the outgoing record before a switch can replace its form, then serialize its write.
+	 * A revert to the confirmed baseline still needs writing when an older request is pending.
+	 * Only the matching entity/load can advance the baseline; row callbacks carry their own id.
+	 *
+	 * Concerns / future improvements: in-page navigation is covered; a browser unload can still
+	 * terminate queued requests. Durable recovery after closing the tab needs a separate design.
 	 */
-	async function doSave() {
-		if (!schema) return;
-		const patch = buildPatch();
-		if (JSON.stringify(patch) === JSON.stringify(lastSavedPatch)) return;
-		const updated = await apiUpdatePropertiesByIdForType(typeId, recordId, patch);
-		record = updated as Record<string, unknown>;
-		lastSavedPatch = patch;
-		onchanged(updated as Record<string, unknown>);
+	function persistSnapshot() {
+		if (!loaded || !schema) return Promise.resolve();
+		const target = { ...loaded };
+		const seq = loadSeq;
+		const key = `${target.typeId}/${target.recordId}`;
+		const patch = dirtyFieldPatch(buildPatch(), lastSavedPatch, pendingFields.get(key));
+		if (!Object.keys(patch).length) return Promise.resolve();
+		pendingFields.set(key, Object.keys(patch));
+		const write = writeTail
+			.catch(() => {})
+			.then(async () => {
+				const updated = await apiUpdatePropertiesByIdForType(target.typeId, target.recordId, patch);
+				if (
+					seq === loadSeq &&
+					loaded?.typeId === target.typeId &&
+					loaded.recordId === target.recordId
+				) {
+					record = updated as Record<string, unknown>;
+					lastSavedPatch = { ...lastSavedPatch, ...patch };
+				}
+				onchanged(updated as Record<string, unknown>);
+			});
+		writeTail = write;
+		pendingWrites.set(key, write);
+		void write
+			.finally(() => {
+				if (pendingWrites.get(key) === write) {
+					pendingWrites.delete(key);
+					pendingFields.delete(key);
+				}
+			})
+			.catch(() => {});
+		return write;
 	}
 
-	/**
-	 * Fire-and-forget flush for the record we're leaving — used in the load effect's cleanup (which
-	 * can't be async) and on `beforeunload`. Reads the still-current form state for the outgoing
-	 * record before `load()` overwrites it.
-	 */
+	/** Autosave entry point; propagates persistence failures to the shared status/toast handler. */
+	async function doSave() {
+		await persistSnapshot();
+	}
+
+	/** Capture before the next load replaces the form; queue behind any in-flight save. */
 	function flushLeavingSync() {
 		autosave.cancel();
-		if (!loaded || !schema || autosave.saving) return;
-		const patch = buildPatch();
-		if (JSON.stringify(patch) === JSON.stringify(lastSavedPatch)) return;
-		void apiUpdatePropertiesByIdForType(loaded.typeId, loaded.recordId, patch)
-			.then((updated) => onchanged(updated as Record<string, unknown>))
-			.catch((e) => console.error('Autosave on leave failed', e));
+		void persistSnapshot().catch((e) => console.error('Autosave on leave failed', e));
 	}
 
 	// Reload whenever the open record changes; flush the outgoing record's edits first.
 	$effect(() => {
 		recordId;
 		typeId;
-		load();
+		untrack(() => void load());
 		return () => flushLeavingSync();
 	});
 
 	// Reload on external request (e.g. a schema change while open).
 	$effect(() => {
-		if (refresh) load();
+		if (refresh) untrack(() => void load());
 	});
 
 	// Best-effort flush if the tab is closed mid-edit.
@@ -245,13 +288,11 @@
 	/** Flush pending edits, then run a prev/next navigation. */
 	async function advance(go: (() => void) | undefined) {
 		if (!go) return;
-		await autosave.commit();
-		go();
+		if (await autosave.commit()) go();
 	}
 
 	async function handleClose() {
-		await autosave.commit();
-		onclose();
+		if (await autosave.commit()) onclose();
 	}
 
 	async function deleteRecord() {

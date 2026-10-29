@@ -11,14 +11,15 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export interface AutosaveController {
 	/** Current save lifecycle state, for the header hint. */
 	readonly status: SaveStatus;
-	/** True while a save is in flight (host guards its flush-on-leave against double writes). */
+	/** True while this controller is saving; hosts must preserve newer outgoing edits separately. */
 	readonly saving: boolean;
 	/**
 	 * Persist now if dirty. Wire to the **intentful** moments: field blur, a discrete change
 	 * (checkbox/dropdown/picker/date/list edit), Enter, prev/next, and close. No-ops when clean or a
-	 * save is already running. Awaitable so callers can flush-then-navigate.
+	 * save is already running. Returns false on failure or while busy so callers retain the editor;
+	 * returns true only when the commit succeeds or the form is clean.
 	 */
-	commit(): Promise<void>;
+	commit(): Promise<boolean>;
 	/** Drop the pending safety-net timer without saving (use before a destructive action). */
 	cancel(): void;
 }
@@ -36,10 +37,11 @@ export interface AutosaveController {
  * in place without the value being clobbered.
  *
  * The `save()` routine is wrapped in {@link untrack} so reading/writing `$state` inside it never
- * re-arms the safety effect — the dirty signal is the effect's only dependency.
+ * adds incidental dependencies to the safety effect. Dirty state and the in-flight flag re-arm
+ * the timer, including when newer edits remain after a save completes.
  *
  * @param opts.isDirty - Reactive predicate: true when the form differs from the last saved baseline.
- *   It (and only it) re-arms the safety timer.
+ *   Together with the in-flight flag, it controls the safety timer.
  * @param opts.save - The async persistence routine. It should write the change, advance its own saved
  *   baseline, and notify the host (`onchanged`/`onSaved`). It must **throw** on failure — this
  *   controller turns a throw into `status='error'` + a toast. It must **not** touch `saving`/`status`
@@ -73,16 +75,19 @@ export function createAutosave(opts: {
 
 	/** Run the host's save once, owning the status/in-flight/error bookkeeping. */
 	async function run() {
-		if (saving || !untrack(isDirty)) return;
+		if (saving) return false;
+		if (!untrack(isDirty)) return true;
 		saving = true;
 		status = 'saving';
 		try {
 			await untrack(() => save());
 			status = 'saved';
+			return true;
 		} catch (e) {
 			console.error(e);
 			status = 'error';
 			toast.error(errorMessage);
+			return false;
 		} finally {
 			saving = false;
 		}
@@ -90,7 +95,9 @@ export function createAutosave(opts: {
 
 	// Idle safety-net only: while dirty, (re)arm a slow timer that flushes if the user never blurs.
 	$effect(() => {
-		if (safetyDelay <= 0 || !isDirty()) return;
+		// Re-arm after an in-flight save settles even if dirty stayed true throughout it.
+		// Otherwise a blur that cancels the timer while saving can strand newer keystrokes.
+		if (saving || safetyDelay <= 0 || !isDirty()) return;
 		cancel();
 		timer = setTimeout(() => {
 			timer = null;
@@ -108,7 +115,7 @@ export function createAutosave(opts: {
 		},
 		async commit() {
 			cancel();
-			await run();
+			return await run();
 		},
 		cancel
 	};
