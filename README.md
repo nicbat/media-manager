@@ -1,14 +1,14 @@
 # media-manager
 
-Local-first data manager built with SvelteKit + Svelte 5. Manages metadata for multiple media types: **images** (files + metadata), **generic / files** (loose files in a folder, optional metadata), and **pure JSON** (metadata only, e.g. projects list).
+Local-first media metadata manager built with SvelteKit and Svelte 5. Files share one blob store; optional classes add schema-driven metadata. JSON records, Globals, and Markdown Posts live alongside them. State is stored on disk, with no database.
 
 ## What it does
 
-- **Multi-media-type**: Open the app to see an overview of media types (e.g. Images, Projects). Each type lives in its own folder under a root directory.
-- **Images**: Store image files and custom metadata (schema-driven fields). Upload, link/unlink, edit properties, delete.
-- **Files (generic)**: Store arbitrary files in the type folder (not only images). Same UI patterns as images (linked/unlinked, upload, etc.); MIME/extension rules are relaxed for uploads compared to `images`.
-- **Pure JSON**: Store records with no file attachment (e.g. a list of projects with title, description, links, tags). Same schema-driven fields and filters.
-- **Schema = settings**: Each media type has one `settings.json` containing display name, kind, schema (field definitions), and app preferences (grid size, etc.). On first launch, the app may create default **`files`** (generic) and **`globals`** (json) groups under your root—see [`docs/FEATURES.md`](docs/FEATURES.md) for behavior details.
+- **All Files:** upload and browse arbitrary files with stable IDs, search, class filters, and image metadata/compression tools.
+- **Classes:** opt files into one or more schemas. Removing class membership leaves the original file on disk.
+- **Records and Globals:** edit schema-driven JSON records or a free-form singleton, with file and record references.
+- **Posts:** edit Markdown bodies and frontmatter, preview photo layouts, and consume workspace data through `media-manager/reader`.
+- **Autosave:** commit on field intent with an idle safety net. See [the feature registry](docs/FEATURES.md) for exact behavior and known limits.
 
 ## Running it
 
@@ -59,57 +59,39 @@ Create the root folder first:
 mkdir -p my-data
 ```
 
-Open the app in the browser. You’ll see the **overview** of media types. Use **Create new** to add a media type (Images, Files, or Pure JSON). Each type gets its own subfolder under the root.
+Open the dashboard to browse All Files, classes, record types, Globals, and Posts. Create a class or record type from the corresponding controls.
 
 ## Data layout
 
-**Root folder** (e.g. `./my-data`) contains one **subfolder per media type**. The app scans the root for subfolders that contain a valid `settings.json` (our format). No manifest file.
-
-### Images media type (e.g. `my-data/images/`)
-
-- **settings.json** – display name, `kind: "images"`, `schema` (field definitions), app settings (grid size, etc.), `dataFileName`, `filesSubdir`
-- **image-data.json** (or name in settings) – image records `{ id, file_name, linked, ...custom fields }`
-- **files/** (or name in settings) – the image files
-
-### Pure JSON media type (e.g. `my-data/projects/`)
-
-- **settings.json** – display name, `kind: "json"`, `schema`, app settings, `dataFileName`
-- **data.json** (or name in settings) – records `{ id, last_modified?, ...custom fields }`
-
-### Generic / “files” media type (e.g. `my-data/files/`)
-
-- **settings.json** – display name, `kind: "generic"`, optional `schema`, `dataFileName` (default `data.json`)
-- **data.json** – image-catalog format `{ images: [] }` when created via the API (may be created on first use otherwise)
-- **Files** live directly in the type folder (no separate `files/` subfolder)
-
-## Migration from the old single-folder layout
-
-If you previously used a single folder (e.g. `my-images/` with `settings.json`, `schema.json`, `image-data.json`, and `images/` inside):
-
-1. Create a root folder and an `images` subfolder, e.g. `my-data/images/`.
-2. Move your **image files** from `my-images/images/` into `my-data/images/files/` (or keep the name `images` and set `filesSubdir` in settings).
-3. Merge **schema into settings**: create `my-data/images/settings.json` with:
-   - `displayName`: e.g. `"Images"`
-   - `kind`: `"images"`
-   - `schema`: copy the contents of your old `schema.json` (the `schema` object).
-   - `dataFileName`: `"image-data.json"`
-   - `filesSubdir`: `"files"` (or `"images"` if you kept that name)
-   - `gridSize`, etc. from your old `settings.json`
-4. Move **image-data.json** into `my-data/images/image-data.json`.
-
-**Optional migration script** (copies old folder into root/images/ with merged settings):
-
-```bash
-node scripts/migrate-to-media-types.mjs ./my-images ./my-data
+```text
+<root>/
+  settings.json
+  media/
+    manifest.json        # stable file IDs and derived indexes
+    files/               # originals, unless static-assets storage is configured
+    classes/<id>.json    # schema, config, and per-file metadata
+    derived/<preset>/    # generated compressed variants
+    settings.json
+  records/
+    settings.json
+    <typeId>/settings.json
+    <typeId>/data.json
+  globals/settings.json
+  globals/data.json
+  posts/settings.json
+  posts/<collection>/<slug>.md
 ```
 
-The folder name (e.g. `images`) is the **media type id**; the display name is in `settings.json` and can be renamed in the UI.
+Class files are authoritative for membership; the manifest's membership index is derived. Display-name changes preserve class/type IDs. Static-assets mode can place originals and derivatives in a host site's served directory; the optional `assets` config controls that location.
 
-## Key concepts
+For older data roots, back up the workspace and inspect the migration dry run before applying it:
 
-- **Stable identity**: Records are identified by a UUID (`id`). The UI does not put filenames in the URL.
-- **Discovery**: The app scans the root folder for subfolders that contain a valid `settings.json`. No manifest.
-- **Media type id** = folder name (e.g. `images`, `projects`). Renaming the display name in the UI does not change the folder name.
+```bash
+npm run upgrade-data -- /absolute/path/to/data
+npm run upgrade-data -- /absolute/path/to/data --apply
+```
+
+The app reads the current layout and rejects detected older layouts with migration guidance. See [docs/FILE_FIRST_CLASSES.md](docs/FILE_FIRST_CLASSES.md) and [docs/FEATURES.md](docs/FEATURES.md) for the storage model.
 
 ## CLI (`media-manager`)
 
@@ -150,7 +132,7 @@ npx media-manager
 # C) straight from GitHub, no clone — npm prepares the build before installing:
 npx github:nicbat/media-manager          # if the repo is public
 npx git+ssh://git@github.com/nicbat/media-manager.git   # private repo: uses your SSH key
-npx github:nicbat/media-manager#v1.0.0   # pin a tag/branch/commit for reproducibility
+npx github:nicbat/media-manager#v0.6.2   # pin a tag/branch/commit for reproducibility
 ```
 
 Route **C** clones into npm's cache and installs the build dependencies there. The `prepare` lifecycle builds **both the editor and reader before npm applies the package's `files` allowlist**. Git dependencies (including `github:nicbat/media-manager#<ref>` in another project's `package.json`) and `npm pack` artifacts therefore contain `build/` and `dist/reader/`; starting the installed CLI requires no source tree or Vite build in the host project. Git installation requires lifecycle scripts to be enabled and takes longer while these builds run. Pin a tag or commit that includes this fix; older tags such as `v0.6.1` retain the packaging bug.
@@ -173,3 +155,11 @@ Registry/tarball consumers use those same prepared outputs. `media-manager build
 - `npm run lint`: prettier + eslint
 - `npm run test`: unit tests (vitest)
 - `npm run test:package`: clean Git and tarball consumer installs, reader imports, and CLI HTTP smoke checks against disposable fixture copies (requires Git, npm, and registry access; never publishes)
+
+- `npm run test:browser`: build and run production Chromium regressions against isolated fixture copies; install Chromium with `npx playwright install chromium` first. Use `-- --skip-build` only with a fresh build, and `-- --grep <text>` to select scenarios.
+- `npm run test:contracts`: build and exercise the actual CLI/HTTP server, portable exports, invalid requests and malformed persisted data against temporary workspaces.
+- `npm run check:plans`: validate backlog metadata, IDs, file pointers and the generated triage board; regenerate board data with `node scripts/check-plans.mjs --write`.
+
+GitHub Actions runs these checks and a real-consumer packaging job on Node 24. Browser failures retain screenshots/traces for 14 days. The `.agents/skills/test-ui-feature/` workflow documents manual UI captures using the actual server readiness URL.
+
+Durable recovery after browser/process termination is a separate, explicitly deferred feature (backlog Item 51). Pending network saves require the page to remain alive.

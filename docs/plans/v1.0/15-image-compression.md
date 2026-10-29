@@ -1,5 +1,7 @@
 # Item 15 — Image Compression Management
 
+> **Status reviewed 2026-10-08:** compression phases 1 and 2 shipped August 18. This brief is historical and any blocked/de-scoped implementation descriptions below are superseded by FEATURES.md and `plans/image-compression.html`. Video and cache-versioning follow-ups are Items 23 and 47.
+
 > 1.0 brief. Backlog: [Item 15](../../FUTURE_CHANGES.md#15--image-compression-management). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: blocked (1 open question — the asset-pipeline decision).** Resolve the pipeline question with Items 34/35 before building.
 
 ## Backlog snapshot

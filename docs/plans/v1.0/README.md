@@ -1,114 +1,77 @@
-# media-manager 1.0 — Release Plan
+# 1.0 plan — reassessed 2026-10-08
 
-The committed scope for the **1.0** release, with one self-contained brief per feature so each can be handed to its own agent. This is the *what* and the *how-we-work*; the per-feature files hold the detail pulled from [`../../FUTURE_CHANGES.md`](../../FUTURE_CHANGES.md).
+**Recommendation:** retain the old feature briefs as design history, but replace their release checklist with evidence that editing is reliable, data is recoverable, and representative libraries stay responsive. This is a proposed release gate, not a decision to release 1.0 or expand scope.
 
-- **Backlog of record:** [`docs/FUTURE_CHANGES.md`](../../FUTURE_CHANGES.md) (item numbers are immutable IDs — the filenames here use them).
-- **Feature map of record:** [`docs/FEATURES.md`](../../FEATURES.md) — update it in the same change when a feature ships.
-- **Triage board:** [`docs/FUTURE_CHANGES_TRIAGE.html`](../../FUTURE_CHANGES_TRIAGE.html).
+The old plan was useful for shipping the file-first storage reorganization, sorting/filtering, configurable grids, masonry, and the CLI/reader. Those are implemented. Since then Posts, Google Photos import, static-assets storage, compression, responsive variants, and range selection have also landed. The previous text describing compression as blocked and Posts as future work is obsolete.
 
-> The filename of each brief is its backlog item number (e.g. `09-sorting.md` ⇒ Item 9). When a feature ships, move its backlog item to **Shipped & folded** in `FUTURE_CHANGES.md` and update `FEATURES.md` — same discipline as always.
+Historical October 8 baseline: package/tag **v0.6.1**, plus the September 11 editor-stability commit. The October review started with **432 passing tests in 36 files** and clean Svelte checks. A Node test pass alone does not establish browser reliability or readiness for a public release.
 
----
+## What remains useful from the old scope
 
-## Scope
+- **Item 5, validation/repair:** valuable, but the old “verify-and-close” framing was wrong. `repairRecords` fills missing fields; it does not remove unknown keys or coerce existing values. Define safe policy before adding destructive repair. See [the corrected brief](05-validation-repair.md).
+- **Item 3, selected-record JSON export:** a convenience, not evidence of release readiness. The shipped CLI workspace export already handles a different, broader portability need. Keep selected-record export optional until its consumer and data shape are clear. See [the corrected brief](03-bulk-operations.md).
+- **Shipped briefs:** retain Items 8, 9, 10, 12, 13, 18, 30–34 as historical implementation references. Do not rerun their interviews or assume their old descriptions are current behavior; use [FEATURES.md](../../FEATURES.md).
+- **Previously deferred:** class triage (19), external masonry dependency (39), registry publishing (43), and a separate reader package (44) stay optional. No automatic scope promotion.
 
-**Committed core (12).** These define 1.0.
+## Proposed release gates
 
-| # | Feature | Brief | Backlog status | Size |
-| --- | --- | --- | --- | --- |
-| 8 | Configurable & verbose grid display | [`08-verbose-grid.md`](08-verbose-grid.md) · [plan](08-verbose-grid-plan.html) | ✅ shipped | L |
-| 9 | Sorting & ordering | [`09-sorting.md`](09-sorting.md) | ✅ shipped | M |
-| 10 | Filter for missing / empty field | [`10-missing-filter.md`](10-missing-filter.md) | ✅ shipped | M |
-| 3 | Bulk operations (export remainder) | [`03-bulk-operations.md`](03-bulk-operations.md) | ready | S |
-| 5 | Data validation & repair | [`05-validation-repair.md`](05-validation-repair.md) | ready | S |
-| 12 | Fix / normalize file extension (+ rename UX) | [`12-fix-extension.md`](12-fix-extension.md) | ✅ shipped | S |
-| 13 | Swap width / height (→ dimension-consistency check + fix) | [`13-swap-dimensions.md`](13-swap-dimensions.md) | ✅ shipped | S |
-| 34 | Reimplement masonry grid layout | [`34-masonry.md`](34-masonry.md) | ✅ shipped | M |
-| 39 | Consume `@nicbat/svelte-masonry` GitHub dep (extraction ✅ shipped) | [`34-masonry.md`](34-masonry.md) | ready · **deferred, not 1.0** | S |
-| 18 | Records storage reorganization | [`18-records-storage-reorg.md`](18-records-storage-reorg.md) · [plan](18-records-storage-reorg-plan.html) | ✅ shipped | M |
-| 19 | Per-class should / shouldn't be here | [`19-should-be-here.md`](19-should-be-here.md) | discussion · **deferred, not 1.0** | M |
-| 30–33 | npx package + reader (sub-project) | [`npx/README.md`](npx/README.md) · [run plan](npx/run-experience-plan.html) · [reader plan](npx/reader-package-plan.html) | **30·31·32·33 ✅ shipped** (30/31/32 2026-06-28 · 33 2026-06-29) · follow-ups 42/43/44 remain | L |
+1. **Editing survives real browser events.** Run the built Node app against disposable roots. Assert focus, caret, text, and disk persistence across idle saves, blur, quick navigation, delayed responses, and cross-tab changes. Include Files, Records, Globals, and Posts, plus failed-save recovery. Item 48 tracks the remaining matrix; an initial browser gate is part of this review.
+2. **Data operations have observable, recoverable outcomes.** Test HTTP error/status contracts, CLI root/config discovery, export/reopen, migration idempotence, malformed files, and lock contention. Existing migration and storage tests are a good foundation; Item 49 fills delivery-boundary gaps. Repair policy remains Item 5.
+3. **Performance has a repeatable baseline.** Measure production UI and storage operations on declared synthetic sizes, distinguish cold/warm runs, report sample count and environment, and retain a rerunnable harness. Avoid asserting universal millisecond limits from one machine. Use deterministic complexity/read-write-count regressions where possible. Decide larger-catalog pagination/windowing from these results (Item 40).
+4. **Packaging works as documented.** Run build, reader build, type checks, relevant lint, Node tests, and browser tests from the checkout. Verify the supported local/git install flow. npm publishing is a separate proposal, not a prerequisite inferred from the name “1.0.”
+5. **Documentation agrees with evidence.** Backlog IDs remain stable, ready items have zero unresolved questions, active file pointers exist, and the triage board matches the backlog. Host-site content/deployment verification is Item 50, not a reason to relabel shipped editor work unfinished.
 
-**Candidates (may join 1.0).** Adjacent items that naturally sequence with the core. Not committed — promote into the table above if we decide to pull them in.
+No gate is considered complete merely because it appears in this document. Record commands, outcomes, limits, and remaining failures in the change that runs it.
 
-- **20 · File-based routing** — per-file/per-class routes + shareable filter URLs. Unblocks the clean "go to file" jump and mobile drill-down. Likely needed by the reader (33) anyway.
-- **26 · File-field UI overhaul** — richer preview + "go to file". Pairs with 20 and with the grid work (8).
-- **9-adjacent polish** — none committed beyond the table.
+## Suggested next work, in order
 
-**De-scoped from 1.0.** **15 · Image compression management** was pulled out of the committed set — it stays a `blocked` backlog item (low usefulness, overlaps the deferred `sharp`/asset-pipeline decision) and is no longer release-blocking.
-
-Everything else in `FUTURE_CHANGES.md` is **post-1.0** unless promoted here.
-
----
-
-## Sequencing
-
-Dependency-aware order. Waves can overlap across agents; within the npx sub-project, follow its own README.
-
-1. **Wave 1 — ready quick wins (parallelizable):** ~~9~~ (shipped), ~~10~~ (shipped), ~~13~~ (shipped), ~~12~~ (shipped), 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
-2. **Wave 2 — display & assets:** ~~8~~ (shipped 2026-06-28 — verbose grid: shared `VerboseFieldsMenu`, `field_values` inline on the list endpoints, both Files + Records; virtualization carved out to Item 40), ~~34~~ (shipped — in-house `Masonry`; follow-up 39 = consume the extracted `@nicbat/svelte-masonry` package, **deferred out of 1.0**). (Item 15 compression was de-scoped from 1.0.)
-3. **Wave 3 — design-then-build:** ~~18~~ (shipped 2026-06-28 — records reorg + settings split: `json` types → `records/<typeId>/`, app-wide prefs hoisted to `<root>/settings.json`, dormant `typeOrder`, `dataFileName` dropped, explicit `upgrade-data` step 6 + old-layout guard; reorder UX split to Item 41). 19 was **deferred out of 1.0** on 2026-06-28 — its Phase-1 discussion concluded the value needs a heuristic candidate source that doesn't exist yet; it stays in the backlog at `usefulness: 3 · priority: medium`.
-4. **Wave 4 — npx sub-project:** ~~32~~ → ~~31~~ → ~~30~~ (all **shipped 2026-06-28** — the editor "easier to run" experience: quiet-heal git-clean browse, ephemeral port + readiness auto-open, `media-manager.config.json` discovery + `serve`/`init`/`doctor` verbs + build-on-demand; plan `npx/run-experience-plan.html`) → ~~33~~ (**shipped 2026-06-29** — the read-only **reader** data layer: `media-manager/reader` subpath, `MediaManager.load` facade over Vite globs, proven against nicb.at; plan `npx/reader-package-plan.html`; **not** the `fs`/root-threading shape originally assumed). Carved-out follow-ups: 42 (quiet-heal content-hash perf) · 43 (editor registry publishing) · 44 (thin standalone reader package) — all post-1.0. See [`npx/README.md`](npx/README.md).
-
----
+- Browser coverage and HTTP/CLI/recovery checks (48, 49) are completed by the October 28 cleanup and run in CI. Durable recovery after browser termination is explicitly deferred as Item 51.
+- Settle repair policy (5) before expanding its write behavior. Unknown user keys should not be deleted based on an old checklist.
+- Use measured large-library behavior to choose the next performance change (40/42). Do not switch to SQLite or implement virtualization solely because the backlog mentions them.
+- For the next visible feature, prioritize file-reference previews/navigation (26), then PDF preview (21) if documents are a frequent workflow. PDF thumbnails still need a renderer decision; video (23) needs a decoder/distribution decision.
+- Validate nicb.at integration separately if it is the next real consumer task (50). Defer npm packaging and selected-record export until there is a concrete need.
 
 ## How we build each feature (the working agreement)
 
-**Agile, not waterfall.** Every brief in this folder is a *starting point*, not a frozen spec. For each feature the owning agent runs the same four-phase loop, and the brief's own **Verification stages** section names the concrete gates.
+Use the current backlog acceptance criteria and existing session authorization. Inspect code before asking questions. Resolve actual product unknowns before implementing dependent changes; routine fixes and measurement do not require a new design interview. For substantial UI or storage redesigns, make the proposal concrete before seeking a decision.
 
-### Phase 1 — Interview the developer
+Implement in small reviewable changes, test at the boundary affected, and update the feature registry with behavior changes. Always test against disposable data. A screenshot is supporting evidence, not an assertion that data persisted. Retain failure artifacts and describe what was not verified.
 
-Before writing any code, **interview Nicholas** (the developer) to turn the brief into a shared intent. Ask, at minimum:
+## Historical briefs
 
-- **Goal** — what problem does this actually solve for him, and what does "1.0-good" look like (vs. gold-plating deferred to later)?
-- **Look & behaviour** — concretely, what should the UI look like and how should it behave? Walk specific interactions, empty/loading/error states, keyboard, mobile.
-- **Resolve the open questions** — every `open_questions` entry in the backlog item is a decision owed *here*. A `discussion`/`blocked` item is not ready to build until these are closed; closing them is the point of this phase.
-- **Cut line** — what's explicitly out of scope for 1.0, recorded so it isn't silently re-added.
+- [Verbose grid](08-verbose-grid.md), [sorting](09-sorting.md), [empty-field filter](10-missing-filter.md)
+- [Extensions](12-fix-extension.md), [dimensions](13-swap-dimensions.md), [masonry](34-masonry.md)
+- [Records reorganization](18-records-storage-reorg.md), [class triage](19-should-be-here.md)
+- [CLI and reader](npx/README.md)
+- [Bulk export remainder](03-bulk-operations.md), [repair policy](05-validation-repair.md)
 
-Use `AskUserQuestion` for the genuinely-forking decisions; don't ask what the code or sensible defaults already answer.
+The [backlog](../../FUTURE_CHANGES.md) and [triage board](../../FUTURE_CHANGES_TRIAGE.html) track candidates. They are not a second source of truth for shipped behavior.
 
-### Phase 2 — Detailed HTML plan
+## Evidence from this review
 
-Produce a **standalone HTML plan** for the feature (same spirit as [`../npx-package-vision.html`](../npx-package-vision.html) and [`../../FUTURE_CHANGES_TRIAGE.html`](../../FUTURE_CHANGES_TRIAGE.html)): open-in-browser, self-contained, no build step. It captures the agreed design so the developer can review and approve **before** building. Include:
+The test suite is **strong in storage integration, thin at the application boundary**. It includes actual filesystem writes and reference cascades, an upgrade-data subprocess/idempotence check, real image encodes, and a 400-file compression/concurrent-reader load test. Calling those tests rudimentary would understate their value. However, the original suite had no committed browser regression gate, direct HTTP contract suite, or repository CI configuration. A mocked DOM-shaped object in `stableValue.test.ts` cannot prove that Svelte keeps a focused input mounted.
 
-- The decided design + rationale, and the resolved open questions.
-- **UI mockups** (ASCII or inline HTML/CSS) of the key states.
-- **Data / API / on-disk changes** — schema, endpoints, manifest/class-file effects, migration if any.
-- The **verification stages** for this feature (Phase 4), written as checkable gates.
+The new browser work reproduced a specific loss of data: while a save response was delayed, newer edits were skipped on an entity switch. Files also advanced its saved baseline from mutable state after awaiting a request, marking text that had never been sent as saved. Immutable outgoing snapshots, ordered saves, and entity-scoped completion/reload guards address these failures. These are stronger signals of useful test coverage than the raw test count. Tab/process termination still cannot be treated as guaranteed persistence; queued writes require the page to remain alive.
 
-> ⚠️ **RAWTEXT gotcha** (learned the hard way): a literal `<iframe>`/`<video>`/`<script>` inside an HTML string silently swallows everything after it. Escape them as `&lt;iframe&gt;` etc. in any note/mockup text. Verify the rendered HTML shows all sections before declaring the plan done.
+Measured performance improvements (same machine, serialized runs):
 
-Get explicit approval on the plan before Phase 3.
+- **Storage, 10,000 files / 100 selected:** add median **4464.87 → 44.83 ms**; remove **4419.50 → 44.50 ms**. One manifest write per selection replaces one per file. Five timed rounds after one warmup, five classes, one-byte non-image blobs. Warm list calls were about 82 ms before; this change targets membership writes, not list caching.
+- **Browser, 1,000 tiny PNGs:** initial listing requests **3 → 1**; median last tile insertion **779 → 294.7 ms**; median initial long-task total **651 → 260 ms**. Three fresh Chromium contexts against a warm production server at 1440×900. Initial load now waits for settings/URL restoration and masonry width measurement.
+- **Limits:** final DOM size remains 6,173 nodes at 1,000 tiles; select-all stays about 107 ms. Network-idle timing only moved about 1540 → 1380 ms, including its 500 ms wait. This is a rendering/startup improvement, not proof of faster real-photo delivery. No virtualization or cache was introduced.
 
-### Phase 3 — Build in vertical slices
+[Raw matched measurements and limitations](../../performance/2026-10-08.json) are retained. Rerun `node scripts/perf-storage.mjs`; for the UI, first `npm run build`, then `node scripts/perf-ui.mjs` (defaults 1,000 tiles / 3 runs; `PERF_UI_COUNT=100` selects the smaller case). Install Playwright Chromium first if absent. Both harnesses create disposable roots and clean up their own processes/data. Small samples are evidence for these narrow changes, not universal performance budgets.
 
-Break the approved plan into the **smallest shippable slices** (a slice = a thin path end-to-end, not a horizontal layer). Build one slice at a time. Adjust the plan as you learn — that's the agile part; when reality diverges from the HTML plan, update the plan and say so, don't quietly drift.
+Final verification for this pass: **434 Node tests / 36 files passed; 7 production-browser scenarios passed; Svelte check reported 0 errors and 0 warnings; full Prettier + ESLint passed; production build succeeded.** Browser scenarios use a fresh fixture and server each time and retain screenshots/traces on failure. Planning validation covers all 51 immutable IDs (26 active, 25 shipped/folded). This paragraph records the original October 8 review; the completed follow-up is recorded below. Host deployment remains Item 50.
 
-### Phase 4 — Verification stages (explicit, every slice)
 
-**State the verification gate before each slice and run it after.** No slice is "done" until its gate is green. The standard gates (use what applies):
+## October 28 integration and completion
 
-- **Type & lint:** `npm run check` (svelte-check) and `npm run lint` clean for touched files.
-- **Unit tests:** `npm run test` — add/extend vitest coverage for new storage/core logic (e.g. `classRepo.test.ts`, `manifest.test.ts`). Assert the new behaviour *and* a no-op/regression guard where relevant.
-- **End-to-end against the fixture:** `npm run test:serve` (builds, copies `test-fixtures/` → gitignored `test-data/`, serves it) and exercise the feature in the running Node app. **Never test against a real data root** — running mutates it.
-- **UI capture:** drive + screenshot/record the feature via the `test-ui-feature` skill (wraps `scripts/ui-capture.mjs` → `.screenshots/`), so the developer can see the actual states, including mid-interaction ones the URL doesn't encode.
-- **Docs in the same change:** update [`docs/FEATURES.md`](../../FEATURES.md) when behaviour/routes/owning files change; update the [`test-fixtures/`](../../../test-fixtures/) seed when on-disk structure changes; move the backlog item to **Shipped & folded** in `FUTURE_CHANGES.md` and keep `FUTURE_CHANGES_TRIAGE.html` in sync.
-- **Hand-off: a manual smoke checklist for Nicholas.** When the feature is done, give the developer a short, concrete **"what to click to confirm it works yourself"** list — the few interactions automated tests can't fully stand in for (persistence across reload, per-entity independence, empty/edge states, the actual look). Phrase it as numbered steps against `npm run test:serve` (the throwaway fixture — never a real data root). The automated gates prove correctness; this list lets the developer *trust* it in 2 minutes. Put it at the end of the feature brief and/or in the hand-off message.
+The October work is reconciled with **v0.6.2**, including the Git packaging fix. The browser suite now covers Globals and Posts in addition to Files/Records, save failure and retry, delayed-response navigation, and linked data refreshed from another tab. Records reload effects depend on explicit navigation/refresh signals; they no longer subscribe to the state they rewrite. Quiet reloads preserve locally edited fields while adopting untouched fields from the server. Posts serialize immutable outgoing snapshots on navigation.
 
-Each feature brief restates these as a concrete, feature-specific checklist — follow that.
+`npm run test:contracts` exercises the real CLI and built HTTP server for root precedence, nested config discovery, malformed config, ephemeral port readiness, doctor failure, child cleanup, static export/reopen, secret exclusion, missing/invalid IDs, malformed mutation bodies, and malformed persisted JSON. Export rejects an unreadable manifest before copying; selected mutation routes map malformed JSON to HTTP 400. Storage tests cover interrupted atomic replacement, lock contention, and stale-lock recovery. Atomic-write staging files are unique and cleaned after failure; this is not a guarantee against arbitrary power loss.
 
----
+`.github/workflows/verify.yml` runs type/lint/planning/Node/HTTP/browser checks plus a separate packaging job on Node 24. Browser failures retain screenshots and traces. The current commands and coverage are documented in FEATURES.md; the October 8 timing artifact stays historical evidence.
 
-## Per-feature briefs
+Items 48 and 49 are folded into the feature registry. Item 50 remains a separate host-repo task. Item 51 records the user's explicit decision to defer durable browser-termination recovery until draft retention and conflict policies are settled. No host-site changes or new release are part of this cleanup.
 
-- [`08-verbose-grid.md`](08-verbose-grid.md)
-- [`09-sorting.md`](09-sorting.md)
-- [`10-missing-filter.md`](10-missing-filter.md)
-- [`03-bulk-operations.md`](03-bulk-operations.md)
-- [`05-validation-repair.md`](05-validation-repair.md)
-- [`12-fix-extension.md`](12-fix-extension.md)
-- [`13-swap-dimensions.md`](13-swap-dimensions.md)
-- [`34-masonry.md`](34-masonry.md)
-- [`18-records-storage-reorg.md`](18-records-storage-reorg.md)
-- [`19-should-be-here.md`](19-should-be-here.md)
-- [`npx/README.md`](npx/README.md) — the npx package + reader sub-project (Items 30 · 31 · 32 · 33)
+Fresh combined validation on v0.6.2 is recorded in PR verification: type/lint/planning checks, 448 Node tests, 6 CLI/HTTP contract scenarios, and 16 production-browser scenarios. The small synthetic performance harnesses are smoke-tested separately; the October 8 timings above are not relabeled as new measurements.
