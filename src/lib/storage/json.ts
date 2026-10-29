@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Read a UTF-8 text file.
@@ -22,9 +23,13 @@ export async function readTextFile(filePath: string): Promise<string> {
  */
 export async function writeTextFileAtomic(filePath: string, contents: string): Promise<void> {
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
-	const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-	await fs.writeFile(tmpPath, contents, 'utf-8');
-	await fs.rename(tmpPath, filePath);
+	const tmpPath = `${filePath}.tmp-${randomUUID()}`;
+	try {
+		await fs.writeFile(tmpPath, contents, 'utf-8');
+		await fs.rename(tmpPath, filePath);
+	} finally {
+		await fs.unlink(tmpPath).catch(() => {});
+	}
 }
 
 /**
