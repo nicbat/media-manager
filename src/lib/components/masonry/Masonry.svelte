@@ -86,13 +86,17 @@
 </script>
 
 <div class="masonry" bind:clientWidth={width} style="--masonry-gap: {gap}px">
-	{#each columns as column, i (i)}
-		<div class="masonry-column">
-			{#each column as item (getKey(item))}
-				{@render children(item)}
-			{/each}
-		</div>
-	{/each}
+	<!-- Wait for measurement instead of mounting every tile in one provisional column, then
+	     destroying/recreating most of them when ResizeObserver reports the real width. -->
+	{#if width > 0}
+		{#each columns as column, i (i)}
+			<div class="masonry-column">
+				{#each column as item (getKey(item))}
+					{@render children(item)}
+				{/each}
+			</div>
+		{/each}
+	{/if}
 </div>
 
 <style>

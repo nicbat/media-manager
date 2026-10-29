@@ -201,15 +201,32 @@ export async function setClassMembership(
 	classId: string,
 	member: boolean
 ): Promise<void> {
+	await setClassMembershipBatch([fileId], classId, member);
+}
+
+/**
+ * Update one class's membership for a whole selection with one manifest read/write and lock.
+ * Other classes and blob metadata are preserved. Unknown ids and unchanged memberships are no-ops.
+ */
+export async function setClassMembershipBatch(
+	fileIds: string[],
+	classId: string,
+	member: boolean
+): Promise<void> {
+	if (!fileIds.length) return;
 	await withFileLock(manifestLockPath(), async () => {
 		const manifest = await readManifest();
-		const entry = manifest.files[fileId];
-		if (!entry) return;
-		const set = new Set(entry.classes);
-		if (member) set.add(classId);
-		else set.delete(classId);
-		manifest.files[fileId] = { ...entry, classes: [...set].sort() };
-		await writeJsonFileAtomic(getManifestPath(), manifest);
+		let changed = false;
+		for (const fileId of new Set(fileIds)) {
+			const entry = manifest.files[fileId];
+			if (!entry || entry.classes.includes(classId) === member) continue;
+			const classes = new Set(entry.classes);
+			if (member) classes.add(classId);
+			else classes.delete(classId);
+			manifest.files[fileId] = { ...entry, classes: [...classes].sort() };
+			changed = true;
+		}
+		if (changed) await writeJsonFileAtomic(getManifestPath(), manifest);
 	});
 }
 

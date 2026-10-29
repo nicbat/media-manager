@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -26,6 +26,7 @@ import { readManifest, setDerivedEntries, type DerivedEntry } from './manifest.j
 import { createMediaType } from './mediaTypes.js';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
+import * as jsonStore from './json.js';
 
 const schema = {
 	caption: { type: 'string', removable: true, defaultValue: '' }
@@ -75,6 +76,46 @@ describe('classRepo — opt-in class membership', () => {
 		await removeMembers(id, [fileId]);
 		expect((await listAllFiles()).files[0].classes).toEqual([]);
 		expect(await getRecord(id, fileId)).toBeNull();
+	});
+
+	it('batches bulk membership index writes while preserving existing metadata and other classes', async () => {
+		for (const name of ['a.txt', 'b.txt', 'c.txt'])
+			fs.writeFileSync(path.join(filesDir, name), 'x');
+		const ids = (await listAllFiles()).files.map((file) => file.id);
+		const gallery = await createClass('Gallery', schema);
+		const favorites = await createClass('Favorites', schema);
+		await addMembers(favorites, ids);
+		await addMembers(gallery, [ids[0]]);
+		await updateRecord(gallery, ids[0], { caption: 'keep me' });
+		const write = vi.spyOn(jsonStore, 'writeJsonFileAtomic');
+		const manifestWrites = () =>
+			write.mock.calls.filter(
+				([destination]) => destination === path.join(filesDir, '..', 'manifest.json')
+			);
+		try {
+			const result = await addMembers(gallery, [...ids, ids[1]]);
+			expect(result.map((record) => record.id)).toEqual([...ids, ids[1]]);
+			expect(result[0].caption).toBe('keep me');
+			expect(manifestWrites()).toHaveLength(1);
+			for (const id of ids)
+				expect((await readManifest()).files[id].classes).toEqual(['favorites', 'gallery']);
+
+			write.mockClear();
+			await addMembers(gallery, ids);
+			expect(write).not.toHaveBeenCalled();
+
+			await removeMembers(gallery, [...ids, ids[1], 'unknown']);
+			expect(manifestWrites()).toHaveLength(1);
+			for (const id of ids) {
+				expect((await readManifest()).files[id].classes).toEqual(['favorites']);
+				expect(await getRecord(gallery, id)).toBeNull();
+			}
+			write.mockClear();
+			await removeMembers(gallery, ids);
+			expect(write).not.toHaveBeenCalled();
+		} finally {
+			write.mockRestore();
+		}
 	});
 
 	it('deleting a class leaves the blob (now unclassified) on disk', async () => {

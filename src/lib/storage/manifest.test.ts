@@ -16,6 +16,7 @@ import {
 	missingFilesMap,
 	getAvailableFileIds,
 	setClassMembership,
+	setClassMembershipBatch,
 	setEntryDimensions,
 	setEntrySizes,
 	setDerivedEntries,
@@ -568,6 +569,23 @@ describe('unrelated manifest writes preserve the derived block', () => {
 		await setClassMembership(fileId, 'gallery', true);
 		expect(await derivedOnDisk()).toEqual(derived);
 		await setClassMembership(fileId, 'gallery', false);
+		expect(await derivedOnDisk()).toEqual(derived);
+	});
+
+	it('batch membership preserves derivatives and concurrent changes to other classes', async () => {
+		const other = await mintFileId('other.txt', 1);
+		await Promise.all([
+			setClassMembershipBatch([fileId, other, fileId, 'unknown'], 'gallery', true),
+			setClassMembershipBatch([fileId, other], 'favorites', true)
+		]);
+		let manifest = await readManifest();
+		expect(Object.keys(manifest.files)).toHaveLength(2);
+		for (const id of [fileId, other])
+			expect(manifest.files[id].classes).toEqual(['favorites', 'gallery']);
+		expect(await derivedOnDisk()).toEqual(derived);
+		await setClassMembershipBatch([fileId, other, fileId, 'unknown'], 'gallery', false);
+		manifest = await readManifest();
+		for (const id of [fileId, other]) expect(manifest.files[id].classes).toEqual(['favorites']);
 		expect(await derivedOnDisk()).toEqual(derived);
 	});
 

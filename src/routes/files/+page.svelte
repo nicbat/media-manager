@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { replaceState } from '$app/navigation';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -792,8 +792,8 @@
 		if (initialClass && classes.some((c) => c.id === initialClass)) {
 			selectedClasses.add(initialClass);
 		}
-		await loadFiles();
-		urlReady = true; // initial restore done — the URL writer below may now run
+		// The filter effect performs the first listing once settings and URL state are restored.
+		urlReady = true;
 	});
 
 	/**
@@ -812,8 +812,10 @@
 		replaceState(parts.length ? `/files?${parts.join('&')}` : '/files', {});
 	});
 
-	// Reload the grid when filters/search change.
+	// Reload only for explicit filters, after restoring settings and the initial class. Do not
+	// subscribe to incidental synchronous reads inside loadFiles (e.g. hub sort/config state).
 	$effect(() => {
+		if (!urlReady) return;
 		query;
 		searchField;
 		[...selectedClasses].join(',');
@@ -821,7 +823,7 @@
 		matchAll;
 		incomplete;
 		emptyField;
-		loadFiles();
+		untrack(() => void loadFiles());
 	});
 
 	// In "all of" mode, lazily load each selected class's schema keys for the group-by-field options.

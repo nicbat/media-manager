@@ -1,0 +1,495 @@
+{
+	"review_date": "2026-10-08",
+	"baseline_commit": "d1e6dcef94f4e67e7ba583c3ac73d8299519e420",
+	"after": "working-tree changes from October review; see accompanying source diff",
+	"environment": {
+		"platform": "Linux-7.2.8-arch1-2-x86_64-with-glibc2.44",
+		"node": "v26.10.0",
+		"browser": "148.0.7778.96"
+	},
+	"limitations": [
+		"Storage: 5 measured rounds after 1 warmup; 5 classes, one-byte non-image blobs; excludes seeding, HTTP, image decoding and UI.",
+		"UI: production build, 1440x900 Chromium, 3 fresh contexts per size, warm server, replicated tiny PNGs; not image download/decode throughput.",
+		"UI matched before/after instrumentation counted some tile insertion records twice; mountedTiles is not a unique-node count and is excluded from conclusions. Current harness uses a WeakSet.",
+		"readyMs in original UI captures includes 500ms networkidle wait and is now named settledMs in the harness.",
+		"Before/after timings were serialized; variability and small sample sizes preclude universal timing budgets."
+	],
+	"measurements": {
+		"storage-before": {
+			"node": "v26.10.0",
+			"platform": "linux",
+			"rounds": 5,
+			"warmupRounds": 1,
+			"results": [
+				{
+					"files": 1000,
+					"operation": "listAllFiles",
+					"medianMs": 8.58,
+					"samplesMs": [10.14, 8.05, 8.58, 8.93, 7.92]
+				},
+				{
+					"files": 1000,
+					"operation": "listClassMembers",
+					"medianMs": 7.72,
+					"samplesMs": [7.72, 6.71, 8.94, 7.29, 8.7]
+				},
+				{
+					"files": 1000,
+					"operation": "missingReferences",
+					"medianMs": 10.88,
+					"samplesMs": [10.88, 10.37, 10.92, 11.71, 10.63]
+				},
+				{
+					"files": 1000,
+					"operation": "add100",
+					"medianMs": 446.77,
+					"samplesMs": [446.77, 563.24, 462.44, 422.48, 437.93]
+				},
+				{
+					"files": 1000,
+					"operation": "remove100",
+					"medianMs": 440.32,
+					"samplesMs": [440.32, 422.93, 420.5, 450.51, 659.23]
+				},
+				{
+					"files": 5000,
+					"operation": "listAllFiles",
+					"medianMs": 36.95,
+					"samplesMs": [39.99, 36.28, 36.16, 36.95, 37.82]
+				},
+				{
+					"files": 5000,
+					"operation": "listClassMembers",
+					"medianMs": 36.14,
+					"samplesMs": [39.44, 37.42, 32.09, 33.66, 36.14]
+				},
+				{
+					"files": 5000,
+					"operation": "missingReferences",
+					"medianMs": 45.82,
+					"samplesMs": [52.78, 42.01, 40.68, 45.82, 47.66]
+				},
+				{
+					"files": 5000,
+					"operation": "add100",
+					"medianMs": 2078.24,
+					"samplesMs": [2195.53, 1989.52, 2067.94, 2078.24, 2222.4]
+				},
+				{
+					"files": 5000,
+					"operation": "remove100",
+					"medianMs": 2081.79,
+					"samplesMs": [2060.62, 2081.79, 2070.99, 2089.38, 2179.62]
+				},
+				{
+					"files": 10000,
+					"operation": "listAllFiles",
+					"medianMs": 82.28,
+					"samplesMs": [78.17, 82.28, 87.42, 75.09, 108.07]
+				},
+				{
+					"files": 10000,
+					"operation": "listClassMembers",
+					"medianMs": 82.07,
+					"samplesMs": [78.08, 83.45, 82.07, 71.5, 82.5]
+				},
+				{
+					"files": 10000,
+					"operation": "missingReferences",
+					"medianMs": 90.7,
+					"samplesMs": [98.93, 102.2, 90.7, 77.95, 88.5]
+				},
+				{
+					"files": 10000,
+					"operation": "add100",
+					"medianMs": 4464.87,
+					"samplesMs": [4599.61, 4509.22, 4243.59, 4280.29, 4464.87]
+				},
+				{
+					"files": 10000,
+					"operation": "remove100",
+					"medianMs": 4419.5,
+					"samplesMs": [4419.5, 4726.51, 4286.73, 4738.99, 4230.68]
+				}
+			]
+		},
+		"storage-after": {
+			"node": "v26.10.0",
+			"platform": "linux",
+			"rounds": 5,
+			"warmupRounds": 1,
+			"results": [
+				{
+					"files": 1000,
+					"operation": "listAllFiles",
+					"medianMs": 5.9,
+					"samplesMs": [8.65, 5.79, 5.66, 6.68, 5.9]
+				},
+				{
+					"files": 1000,
+					"operation": "listClassMembers",
+					"medianMs": 6.08,
+					"samplesMs": [7.96, 5.77, 6.64, 5.56, 6.08]
+				},
+				{
+					"files": 1000,
+					"operation": "missingReferences",
+					"medianMs": 8.21,
+					"samplesMs": [11.74, 8.88, 7.96, 7.27, 8.21]
+				},
+				{
+					"files": 1000,
+					"operation": "add100",
+					"medianMs": 4.01,
+					"samplesMs": [6.02, 4.01, 3.96, 4.51, 3.73]
+				},
+				{
+					"files": 1000,
+					"operation": "remove100",
+					"medianMs": 3.66,
+					"samplesMs": [4.11, 3.66, 3.54, 4.83, 3.6]
+				},
+				{
+					"files": 5000,
+					"operation": "listAllFiles",
+					"medianMs": 33.26,
+					"samplesMs": [33.26, 27.38, 31.83, 33.35, 34.27]
+				},
+				{
+					"files": 5000,
+					"operation": "listClassMembers",
+					"medianMs": 34.8,
+					"samplesMs": [34.83, 29.61, 29.45, 35.49, 34.8]
+				},
+				{
+					"files": 5000,
+					"operation": "missingReferences",
+					"medianMs": 43.8,
+					"samplesMs": [43.13, 37.72, 43.8, 47.64, 46.86]
+				},
+				{
+					"files": 5000,
+					"operation": "add100",
+					"medianMs": 23.02,
+					"samplesMs": [18.42, 19.87, 23.06, 23.84, 23.02]
+				},
+				{
+					"files": 5000,
+					"operation": "remove100",
+					"medianMs": 22.14,
+					"samplesMs": [18.05, 40.06, 20.9, 23.95, 22.14]
+				},
+				{
+					"files": 10000,
+					"operation": "listAllFiles",
+					"medianMs": 71.4,
+					"samplesMs": [58.22, 57.04, 71.4, 73.03, 74.9]
+				},
+				{
+					"files": 10000,
+					"operation": "listClassMembers",
+					"medianMs": 71.31,
+					"samplesMs": [58.6, 65.32, 73.43, 71.31, 73.9]
+				},
+				{
+					"files": 10000,
+					"operation": "missingReferences",
+					"medianMs": 90.11,
+					"samplesMs": [76.43, 88.53, 90.11, 91.57, 112.76]
+				},
+				{
+					"files": 10000,
+					"operation": "add100",
+					"medianMs": 44.83,
+					"samplesMs": [38.56, 44.83, 43.05, 48.35, 45.4]
+				},
+				{
+					"files": 10000,
+					"operation": "remove100",
+					"medianMs": 44.5,
+					"samplesMs": [34.31, 44.5, 41.75, 46.49, 51.02]
+				}
+			]
+		},
+		"ui-before": {
+			"count": 1000,
+			"runs": 3,
+			"browser": "148.0.7778.96",
+			"results": [
+				{
+					"run": 1,
+					"readyMs": 1644.2999999998137,
+					"mountedTiles": 3714,
+					"lastTileMutationMs": 779,
+					"longTasks": [56, 277, 278, 58],
+					"domNodes": 6173,
+					"columns": 7,
+					"selectAllMs": 119.20000000018626,
+					"requests": 172,
+					"blobRequests": 126,
+					"apiRequests": [
+						"/api/settings",
+						"/api/files",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files",
+						"/api/files"
+					]
+				},
+				{
+					"run": 2,
+					"readyMs": 1411.7999999998137,
+					"mountedTiles": 3714,
+					"lastTileMutationMs": 773.8999999994412,
+					"longTasks": [55, 249, 59, 287, 60],
+					"domNodes": 6173,
+					"columns": 7,
+					"selectAllMs": 106.8999999994412,
+					"requests": 172,
+					"blobRequests": 126,
+					"apiRequests": [
+						"/api/settings",
+						"/api/files",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files",
+						"/api/files"
+					]
+				},
+				{
+					"run": 3,
+					"readyMs": 1540,
+					"mountedTiles": 3714,
+					"lastTileMutationMs": 957.0999999996275,
+					"longTasks": [62, 266, 60, 305, 50],
+					"domNodes": 6173,
+					"columns": 7,
+					"selectAllMs": 104.70000000018626,
+					"requests": 172,
+					"blobRequests": 126,
+					"apiRequests": [
+						"/api/settings",
+						"/api/files",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files",
+						"/api/files"
+					]
+				}
+			]
+		},
+		"ui-after": {
+			"count": 1000,
+			"runs": 3,
+			"browser": "148.0.7778.96",
+			"results": [
+				{
+					"run": 1,
+					"readyMs": 1683.2000000001863,
+					"mountedTiles": 2000,
+					"lastTileMutationMs": 390.70000000018626,
+					"longTasks": [60, 144, 75],
+					"domNodes": 6173,
+					"columns": 7,
+					"selectAllMs": 131,
+					"requests": 170,
+					"blobRequests": 126,
+					"apiRequests": [
+						"/api/settings",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files"
+					]
+				},
+				{
+					"run": 2,
+					"readyMs": 1379.7000000001863,
+					"mountedTiles": 2000,
+					"lastTileMutationMs": 294.70000000018626,
+					"longTasks": [59, 130, 63],
+					"domNodes": 6173,
+					"columns": 7,
+					"selectAllMs": 106.79999999981374,
+					"requests": 170,
+					"blobRequests": 126,
+					"apiRequests": [
+						"/api/settings",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files"
+					]
+				},
+				{
+					"run": 3,
+					"readyMs": 1343.7000000001863,
+					"mountedTiles": 2000,
+					"lastTileMutationMs": 290.79999999981374,
+					"longTasks": [56, 140, 64],
+					"domNodes": 6173,
+					"columns": 7,
+					"selectAllMs": 96.5,
+					"requests": 170,
+					"blobRequests": 126,
+					"apiRequests": [
+						"/api/settings",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files"
+					]
+				}
+			]
+		},
+		"ui-before-100": {
+			"count": 100,
+			"runs": 3,
+			"browser": "148.0.7778.96",
+			"results": [
+				{
+					"run": 1,
+					"readyMs": 1586.7000000001863,
+					"mountedTiles": 370,
+					"lastTileMutationMs": 353.20000000018626,
+					"longTasks": [67, 51],
+					"domNodes": 773,
+					"columns": 7,
+					"selectAllMs": 75.5,
+					"requests": 146,
+					"blobRequests": 100,
+					"apiRequests": [
+						"/api/settings",
+						"/api/files",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files",
+						"/api/files"
+					]
+				},
+				{
+					"run": 2,
+					"readyMs": 907.6999999992549,
+					"mountedTiles": 370,
+					"lastTileMutationMs": 301.3999999994412,
+					"longTasks": [64],
+					"domNodes": 773,
+					"columns": 7,
+					"selectAllMs": 57.09999999962747,
+					"requests": 146,
+					"blobRequests": 100,
+					"apiRequests": [
+						"/api/settings",
+						"/api/files",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files",
+						"/api/files"
+					]
+				},
+				{
+					"run": 3,
+					"readyMs": 884.1000000005588,
+					"mountedTiles": 370,
+					"lastTileMutationMs": 297.79999999981374,
+					"longTasks": [69],
+					"domNodes": 773,
+					"columns": 7,
+					"selectAllMs": 40.69999999925494,
+					"requests": 146,
+					"blobRequests": 100,
+					"apiRequests": [
+						"/api/settings",
+						"/api/files",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files",
+						"/api/files"
+					]
+				}
+			]
+		},
+		"ui-after-100": {
+			"count": 100,
+			"runs": 3,
+			"browser": "148.0.7778.96",
+			"results": [
+				{
+					"run": 1,
+					"readyMs": 978.5,
+					"mountedTiles": 200,
+					"lastTileMutationMs": 284.19999999925494,
+					"longTasks": [56],
+					"domNodes": 773,
+					"columns": 7,
+					"selectAllMs": 64.20000000018626,
+					"requests": 144,
+					"blobRequests": 100,
+					"apiRequests": [
+						"/api/settings",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files"
+					]
+				},
+				{
+					"run": 2,
+					"readyMs": 858.8999999994412,
+					"mountedTiles": 200,
+					"lastTileMutationMs": 181.8999999994412,
+					"longTasks": [54],
+					"domNodes": 773,
+					"columns": 7,
+					"selectAllMs": 55.700000000186265,
+					"requests": 144,
+					"blobRequests": 100,
+					"apiRequests": [
+						"/api/settings",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files"
+					]
+				},
+				{
+					"run": 3,
+					"readyMs": 863,
+					"mountedTiles": 200,
+					"lastTileMutationMs": 183,
+					"longTasks": [58],
+					"domNodes": 773,
+					"columns": 7,
+					"selectAllMs": 64.70000000018626,
+					"requests": 144,
+					"blobRequests": 100,
+					"apiRequests": [
+						"/api/settings",
+						"/api/settings",
+						"/api/settings",
+						"/api/classes",
+						"/api/files/missing",
+						"/api/files"
+					]
+				}
+			]
+		}
+	}
+}
