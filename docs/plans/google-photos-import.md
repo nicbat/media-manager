@@ -1,5 +1,7 @@
 # Plan — Google Photos import (Picker API)
 
+> **Status reviewed 2026-10-08:** implemented; August 17 added poll resilience and error diagnostics. This is the historical design, not an active build task. A live Google-account import has not been reverified in this review; use FEATURES.md for current implementation.
+
 > **Status:** design complete — **`ready` to build** (not started). All four
 > open questions were closed by research on **2026-06-29** (see §4). **Verdict:
 > feasible.** Maps cleanly onto the existing upload → manifest path. The hard

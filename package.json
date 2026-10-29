@@ -47,7 +47,10 @@
 		"test:package": "node --test scripts/package.test.mjs",
 		"test:serve": "node scripts/serve-test.mjs",
 		"upgrade-data": "node scripts/upgrade-data.mjs",
-		"release": "node scripts/release.mjs"
+		"release": "node scripts/release.mjs",
+		"test:browser": "node scripts/test-browser.mjs",
+		"test:contracts": "npm run build && node --test scripts/contracts.test.mjs",
+		"check:plans": "node scripts/check-plans.mjs"
 	},
 	"devDependencies": {
 		"@lucide/svelte": "^1.22.0",

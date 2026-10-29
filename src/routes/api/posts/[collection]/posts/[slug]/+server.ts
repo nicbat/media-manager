@@ -1,3 +1,4 @@
+import { readJsonBody } from '$lib/server/requestJson.js';
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createPostsRepoForCollection } from '$lib/storage/postsRepo.js';
@@ -30,7 +31,7 @@ export const GET: RequestHandler = async ({ params }) => {
 export const PUT: RequestHandler = async ({ params, request }) => {
 	const collection = assertSafeSegment(params.collection, 'collection');
 	const slug = assertSafeSegment(params.slug, 'slug');
-	const parsed = WriteBodySchema.safeParse(await request.json());
+	const parsed = WriteBodySchema.safeParse(await readJsonBody(request));
 	if (!parsed.success) throw error(400, 'Invalid post payload');
 	try {
 		return json(await createPostsRepoForCollection(collection).writePost(slug, parsed.data));
@@ -45,7 +46,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	const collection = assertSafeSegment(params.collection, 'collection');
 	const slug = assertSafeSegment(params.slug, 'slug');
-	const parsed = RenameBodySchema.safeParse(await request.json());
+	const parsed = RenameBodySchema.safeParse(await readJsonBody(request));
 	if (!parsed.success) throw error(400, 'Invalid rename payload');
 	try {
 		const newSlug = await createPostsRepoForCollection(collection).renamePost(

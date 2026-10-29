@@ -171,7 +171,8 @@
 	}
 
 	/** Patch the sidebar row in place after a field autosave — keeps the rail title synced, no refetch. */
-	function onPostSaved(info: { slug: string; title: string; draft: boolean }) {
+	function onPostSaved(info: { collection: string; slug: string; title: string; draft: boolean }) {
+		if (info.collection !== activeCollection) return;
 		posts = posts.map((p) =>
 			p.slug === info.slug ? { ...p, title: info.title, draft: info.draft } : p
 		);

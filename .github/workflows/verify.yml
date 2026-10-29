@@ -1,0 +1,56 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    # Match the OS supported by the lockfile's Playwright browser installer.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - run: npm run check:plans
+      - run: npm test
+      - run: node --test scripts/contracts.test.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser -- --skip-build
+      - name: Retain browser failure screenshots and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failures
+          path: .screenshots/browser-*/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+  packaging:
+    # Match the OS supported by the lockfile's Playwright browser installer.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:package

@@ -26,7 +26,8 @@ import { fileURLToPath } from 'node:url';
  *
  * Concerns / future improvements:
  * - WebM is broadly playable (browsers, VLC); convert to GIF with ffmpeg if a GIF is required.
- * - `BASE_URL` assumes the `test:serve` default port (3000); override with `UI_BASE_URL`.
+ * - `test:serve` binds an ephemeral port; set `UI_BASE_URL` from its readiness URL.
+ *   The helper's legacy localhost:3000 fallback is only for deliberately pinned servers.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,7 +35,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /** Absolute path to the gitignored folder where captures (PNG + WebM) are written. */
 export const SCREENSHOT_DIR = path.join(repoRoot, '.screenshots');
 
-/** Base URL the page is scoped to; matches the `npm run test:serve` default. */
+/** Base URL from the server readiness line; the legacy fallback requires an explicitly pinned port. */
 export const BASE_URL = process.env.UI_BASE_URL ?? 'http://localhost:3000';
 
 /** Pristine committed seed; the source of every `reset()` (see `serve-test.mjs`). */

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
@@ -48,7 +49,7 @@
 		schema?: SchemaDefinition;
 		displayField?: string;
 		onStructureChanged?: (newSlug: string | null) => void;
-		onSaved?: (info: { slug: string; title: string; draft: boolean }) => void;
+		onSaved?: (info: { collection: string; slug: string; title: string; draft: boolean }) => void;
 	} = $props();
 
 	let loading = $state(true);
@@ -146,13 +147,37 @@
 		return slug;
 	}
 
-	async function save() {
-		if (!dirty) return;
+	/** Serialize immutable snapshots; destroy flushes the latest draft behind any in-flight write. */
+	let writeTail: Promise<void> = Promise.resolve();
+	let pendingSaves = 0;
+	let deleting = false;
+	function save(): Promise<void> {
+		if ((!dirty && !pendingSaves) || deleting) return Promise.resolve();
 		const persisted = snapshot();
-		await apiWritePost(collection, slug, { frontmatter: toDiskForm(frontmatter), body });
-		savedSnapshot = persisted;
-		onSaved?.({ slug, title: currentTitle(), draft: frontmatter.draft === true });
+		const target = { collection, slug };
+		const payload = JSON.parse(JSON.stringify({ frontmatter: toDiskForm(frontmatter), body }));
+		const info = { ...target, title: currentTitle(), draft: frontmatter.draft === true };
+		pendingSaves++;
+		const write = writeTail
+			.catch(() => {})
+			.then(async () => {
+				await apiWritePost(target.collection, target.slug, payload);
+				savedSnapshot = persisted;
+				onSaved?.(info);
+			});
+		writeTail = write;
+		void write
+			.finally(() => {
+				pendingSaves--;
+			})
+			.catch(() => {});
+		return write;
 	}
+
+	onDestroy(() => {
+		autosave.cancel();
+		void save().catch((err) => console.error('Post save on leave failed', err));
+	});
 
 	const autosave = createAutosave({
 		isDirty: () => dirty,
@@ -164,7 +189,7 @@
 		const next = renameValue.trim();
 		renaming = false;
 		if (!next || next === slug) return;
-		await autosave.commit();
+		if (!(await autosave.commit())) return;
 		try {
 			const newSlug = await apiRenamePost(collection, slug, next);
 			onStructureChanged?.(newSlug);
@@ -176,12 +201,15 @@
 
 	async function doDelete() {
 		pendingDelete = false;
+		deleting = true;
 		autosave.cancel();
 		try {
+			await writeTail.catch(() => {});
 			await apiDeletePost(collection, slug);
 			onStructureChanged?.(null);
 		} catch (e) {
 			console.error(e);
+			deleting = false;
 			toast.error('Failed to delete post');
 		}
 	}

@@ -1,3 +1,4 @@
+import { readJsonBody } from '$lib/server/requestJson.js';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
@@ -35,7 +36,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const id = ImageIdSchema.safeParse(params.id);
 	if (!id.success) throw error(400, 'Invalid id');
 
-	const body = await request.json();
+	const body = await readJsonBody(request);
 	const patch = UpdatePropertiesRequestSchema.safeParse(body);
 	if (!patch.success) throw error(400, 'Invalid properties payload');
 

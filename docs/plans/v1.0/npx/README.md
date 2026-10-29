@@ -1,5 +1,7 @@
 # 1.0 Sub-project — npx Package + Reader
 
+> **Status reviewed 2026-10-08:** Items 30–33 are shipped. The motivation/sequencing below is historical, not a claim that browse churn or fixed-port setup remains broken. See the reassessed parent release plan for current proposed verification gates.
+
 > Part of [media-manager 1.0](../README.md). The biggest piece of the release: make media-manager runnable as an **npx package inside a host repo**, plus the read-only **reader** face. Items **30 · 31 · 32 · 33**.
 
 > **✅ Mode A shipped 2026-06-28 — Items 30 · 31 · 32** (the editor "easier to run" experience; combined [run-experience plan](run-experience-plan.html)). **✅ Mode B shipped 2026-06-29 — Item 33** (the read-only **reader** data layer; [reader plan](reader-package-plan.html)). Remaining: carved-out follow-ups **42** (quiet-heal content-hash perf), **43** (editor registry publishing), **44** (thin standalone reader package) — all post-1.0.

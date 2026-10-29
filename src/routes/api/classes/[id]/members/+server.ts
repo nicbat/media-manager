@@ -1,3 +1,4 @@
+import { readJsonBody } from '$lib/server/requestJson.js';
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
@@ -60,7 +61,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 /** POST: Add blobs to the class (creates empty member records). Body: { ids }. */
 export const POST: RequestHandler = async ({ params, request }) => {
-	const parsed = IdsBodySchema.safeParse(await request.json());
+	const parsed = IdsBodySchema.safeParse(await readJsonBody(request));
 	if (!parsed.success) throw error(400, 'ids array is required');
 	try {
 		const records = await addMembers(params.id, parsed.data.ids);
@@ -78,7 +79,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 /** DELETE: Remove blobs from the class (drops their member records). Body: { ids }. */
 export const DELETE: RequestHandler = async ({ params, request }) => {
-	const parsed = IdsBodySchema.safeParse(await request.json());
+	const parsed = IdsBodySchema.safeParse(await readJsonBody(request));
 	if (!parsed.success) throw error(400, 'ids array is required');
 	try {
 		// Drop these blobs from any linked record's file field before they leave the class.

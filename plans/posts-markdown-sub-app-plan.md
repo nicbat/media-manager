@@ -1,6 +1,8 @@
 # Plan: "Posts" — a Markdown writing sub-app
 
-**Backlog item:** [`FUTURE_CHANGES.md` Item 14](FUTURE_CHANGES.md#14--posts--a-markdown-writing-sub-app) · **Status:** ready · **Size:** L (multi-day, design-heavy)
+> **Status reviewed 2026-10-08:** media-manager implementation is shipped (storage, editor, schema/frontmatter, preview, reader). This document is historical design detail. Phase 5 host-site migration is unverified here and tracked separately as Item 50 in `docs/FUTURE_CHANGES.md`; do not rebuild the editor from this plan.
+
+**Backlog item:** [`FUTURE_CHANGES.md` Item 14](../docs/FUTURE_CHANGES.md#14--posts--a-markdown-writing-sub-app) · **Status:** shipped in this repo; host verification separate · **Size:** L (multi-day, design-heavy)
 
 A fourth sub-app (peer to **Files / Records / Globals**) for authoring blog posts in Markdown that embed photos from the Files library. Structurally it mirrors the **Records** sub-app but stores `.md` files instead of JSON records, and the **reader package** — which host sites already depend on — grows a `posts()` capability that renders a post to finished HTML with every image reference resolved.
 

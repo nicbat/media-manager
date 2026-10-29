@@ -15,9 +15,9 @@
 				--accent: #ff6fb5;
 				--accent-dim: #5a2740;
 
-				--done: #3ecf8e;
-				--verify: #f0b429;
-				--active: #6aa8ff;
+				--shipped: #3ecf8e;
+				--blocked: #f0b429;
+				--ready: #6aa8ff;
 				--discussion: #b692ff;
 
 				--s: #3ecf8e;
@@ -135,7 +135,7 @@
 			.chip:hover {
 				border-color: var(--muted);
 			}
-			.chip.active {
+			.chip.ready {
 				background: var(--accent-dim);
 				border-color: var(--accent);
 				color: #fff;
@@ -212,16 +212,16 @@
 				top: 0;
 				bottom: 0;
 				width: 3px;
-				background: var(--active);
+				background: var(--ready);
 			}
-			.card.s-done::before {
-				background: var(--done);
+			.card.s-shipped::before {
+				background: var(--shipped);
 			}
-			.card.s-verify::before {
-				background: var(--verify);
+			.card.s-blocked::before {
+				background: var(--blocked);
 			}
-			.card.s-active::before {
-				background: var(--active);
+			.card.s-ready::before {
+				background: var(--ready);
 			}
 			.card.s-discussion::before {
 				background: var(--discussion);
@@ -298,14 +298,14 @@
 			.b.status {
 				font-weight: 600;
 			}
-			.b.status.s-done {
-				color: var(--done);
+			.b.status.s-shipped {
+				color: var(--shipped);
 			}
-			.b.status.s-verify {
-				color: var(--verify);
+			.b.status.s-blocked {
+				color: var(--blocked);
 			}
-			.b.status.s-active {
-				color: var(--active);
+			.b.status.s-ready {
+				color: var(--ready);
 			}
 			.b.status.s-discussion {
 				color: var(--discussion);
@@ -411,8 +411,9 @@
 		<header class="top">
 			<h1><span class="pink">Future Changes</span> — Triage Board</h1>
 			<p class="sub">
-				Live read of <code>docs/FUTURE_CHANGES.md</code> · 48 items classified by status, size,
-				cluster, and open-question load · generated 2026-06-29
+				Generated mirror of <code>docs/FUTURE_CHANGES.md</code> · 52 items classified by status,
+				size, cluster, and open-question load · reviewed 2026-10-08 · regenerate with
+				<code>node scripts/check-plans.mjs --write</code>
 			</p>
 			<div class="stats" id="stats"></div>
 		</header>
@@ -421,30 +422,30 @@
 			<div class="controls">
 				<div class="filtergroup">
 					<span class="lbl">Status</span>
-					<span class="chip active" data-f="status" data-v="all">All</span>
-					<span class="chip" data-f="status" data-v="active"
-						><span class="dot" style="background: var(--active)"></span>Active</span
+					<span class="chip ready" data-f="status" data-v="all">All</span>
+					<span class="chip" data-f="status" data-v="ready"
+						><span class="dot" style="background: var(--ready)"></span>Ready</span
 					>
-					<span class="chip" data-f="status" data-v="verify"
-						><span class="dot" style="background: var(--verify)"></span>Verify / likely done</span
+					<span class="chip" data-f="status" data-v="blocked"
+						><span class="dot" style="background: var(--blocked)"></span>Blocked</span
 					>
 					<span class="chip" data-f="status" data-v="discussion"
 						><span class="dot" style="background: var(--discussion)"></span>Discussion</span
 					>
-					<span class="chip" data-f="status" data-v="done"
-						><span class="dot" style="background: var(--done)"></span>Done / folded</span
+					<span class="chip" data-f="status" data-v="shipped"
+						><span class="dot" style="background: var(--shipped)"></span>Shipped / folded</span
 					>
 				</div>
 				<div class="filtergroup">
 					<span class="lbl">Size</span>
-					<span class="chip active" data-f="size" data-v="all">All</span>
+					<span class="chip ready" data-f="size" data-v="all">All</span>
 					<span class="chip" data-f="size" data-v="S">S</span>
 					<span class="chip" data-f="size" data-v="M">M</span>
 					<span class="chip" data-f="size" data-v="L">L</span>
 				</div>
 				<div class="filtergroup">
 					<span class="lbl">View</span>
-					<span class="chip active" data-f="view" data-v="cluster">By cluster</span>
+					<span class="chip ready" data-f="view" data-v="cluster">By cluster</span>
 					<span class="chip" data-f="view" data-v="ranked">Ranked by usefulness</span>
 				</div>
 				<div class="filtergroup">
@@ -458,535 +459,683 @@
 			<p class="legend">
 				Click chips to filter (combine across rows). <b>● ●/5</b> = usefulness (product
 				leverage/value); switch to <b>Ranked by usefulness</b> for a single high→low list.
-				<b>Use —</b> = done/folded (no remaining value). <b>Stale code refs</b> = the item still
+				<b>Use —</b> = shipped/folded (no remaining value). <b>Stale code refs</b> = the item still
 				names files deleted in the file-first redesign — valid feature, broken pointers. <b>OQ</b> =
 				unresolved design decisions that block agent-readiness.
 			</p>
 
 			<div class="reco">
-				<h3>Recommended cleanup (from the agent-backlog research)</h3>
+				<h3>October review: proposed priorities</h3>
 				<ol>
 					<li>
-						<b>Archive the 6 Done/folded items</b> (1, 2, 6, 22, 28, 27) into a collapsed bottom
-						section — they pad the file and re-litigate settled work.
-						<span>Keep a one-line "shipped → see FEATURES.md".</span>
+						Protect real editing flows with browser regressions (48), then CLI/HTTP/recovery
+						contracts (49).
 					</li>
-					<li>
-						<b>Delete the 4 Verify items after a 5-min check</b> (0, 3, 5, 29). 0 is fully shipped;
-						3 & 5 are mostly shipped (only bulk-export / repair-scope remain) — demote to a
-						one-liner; 29 is still valid.
-					</li>
-					<li>
-						<b>Fix the stale-ref items</b> (8, 12, 14, 17) — repoint to <code>classRepo.ts</code> /
-						<code>DataGrid</code> / <code>FieldInput</code>; Item 14 also predates the file-first
-						model and needs a rethink, not just a re-link. (Item 9 shipped.)
-					</li>
-					<li>
-						<b>Make "ready" a real state.</b> Adopt per-item frontmatter (<code
-							>status · size · files · depends_on · open_questions · acceptance</code
-						>). An item with any open question = <code>blocked</code>, never handed to an agent.
-					</li>
-					<li>
-						<b>Group by cluster, not by number.</b> The npx (30–33+7) and media-kinds (14/21/23/24)
-						clusters already exist implicitly — make them headers with explicit ordering.
-					</li>
+					<li>Resolve safe repair policy (5); the existing helper only fills missing fields.</li>
+					<li>Measure library-size costs before choosing pagination or virtualization (40).</li>
+					<li>Keep shipped editor features separate from unverified host rollout (50).</li>
 				</ol>
+				<p>
+					<a href="plans/v1.0/README.md">Reassessed 1.0 plan</a> ·
+					<a href="FUTURE_CHANGES.md">Backlog details and acceptance</a>
+				</p>
 			</div>
 
 			<div id="board"></div>
 		</div>
 
 		<script>
+			// prettier-ignore
 			const ITEMS = [
-				// status: done | verify | active | discussion
-				// use: usefulness 1-5 (5 = highest product leverage / value)
-				// group keys defined in GROUPS below
-				{
-					n: 1,
-					name: 'File Field Picker UI',
-					status: 'done',
-					size: null,
-					use: 4,
-					group: 'fields',
-					note: 'Shipped — FilePicker over the global blob store.'
-				},
-				{
-					n: 2,
-					name: 'Missing File Indicators (API + UI)',
-					status: 'done',
-					size: null,
-					use: 4,
-					group: 'fields',
-					note: 'Shipped end-to-end (badges + inline warnings).'
-				},
-				{
-					n: 6,
-					name: 'Stable File IDs',
-					status: 'done',
-					size: null,
-					use: 5,
-					group: 'storage',
-					note: 'Shipped (Option 3) — manifest UUIDs, O(1) rename. Foundational for 7/12/17.'
-				},
-				{
-					n: 22,
-					name: 'Group-by across multiple classes',
-					status: 'done',
-					size: null,
-					use: 3,
-					group: 'grid',
-					note: "Shipped — 'all of' view groups by (class, field)."
-				},
-				{
-					n: 28,
-					name: 'Per-Type / Per-Class Icon Picker',
-					status: 'done',
-					size: null,
-					use: 3,
-					group: 'misc',
-					note: 'Shipped — curated Lucide set in the unified settings dialog.'
-				},
-				{
-					n: 27,
-					name: 'npx Package Distribution',
-					status: 'done',
-					size: null,
-					use: 0,
-					group: 'npx',
-					folded: 30,
-					note: 'Folded into Item 30 (publish mechanics). Keep as a redirect only.'
-				},
-				{
-					n: 9,
-					name: 'Sorting & Ordering',
-					status: 'done',
-					size: 'M',
-					use: 4,
-					group: 'grid',
-					note: 'Shipped — shared SortControl + core/sort.ts comparator (empties-last, stable tie-break); ?sort&dir on records list / files / class members; persisted per-entity. Last-modified shown in side panels.'
-				},
-
-				{
-					n: 0,
-					name: 'Make URL fields editable',
-					status: 'done',
-					size: 'S',
-					use: 0,
-					group: 'fields',
-					note: '✅ <b>Shipped</b> — FieldInput.svelte has a full url {display_name,url} editor. Tombstone in FUTURE_CHANGES (status: shipped); safe to delete on the next pass.'
-				},
-				{
-					n: 3,
-					name: 'Bulk Operations',
-					status: 'verify',
-					size: 'S',
-					prio: 'low',
-					use: 1,
-					group: 'bulk',
-					note: '<b>Mostly shipped:</b> bulk-update + bulk-delete exist (RecordBulkActions). Only bulk-<b>export</b> JSON remains. Demote to a one-liner.'
-				},
-				{
-					n: 5,
-					name: 'Data Validation & Repair',
-					status: 'verify',
-					size: 'M',
-					prio: 'low',
-					use: 2,
-					group: 'bulk',
-					note: '<b>Partially shipped:</b> a records <code>repair</code> endpoint already exists. Confirm it covers orphan-key + type-coerce, then close or narrow.'
-				},
-				{
-					n: 4,
-					name: 'Schema Import/Export',
-					status: 'active',
-					size: 'M',
-					prio: 'low',
-					use: 2,
-					group: 'bulk',
-					note: "Export/import/clone a type's or class's embedded schema as standalone JSON. Self-contained, low priority. Both schema endpoints already exist to build on."
-				},
-				{
-					n: 29,
-					name: 'Records Explorer — Mobile drill-down',
-					status: 'verify',
-					size: 'M',
-					prio: 'low',
-					use: 2,
-					group: 'misc',
-					note: '<b>Still valid</b> — the three-pane Records Explorer (RecordsRail, /media) does exist. Keep, but verify viewport scope vs. Item 20.'
-				},
-
-				{
-					n: 7,
-					name: 'Static Site Export (read-only)',
-					status: 'active',
-					size: 'L',
-					prio: 'med',
-					use: 1,
-					group: 'npx',
-					oq: 3,
-					deps: [6],
-					note: 'Read-only export target. Sequences with the npx cluster; needs the same root-threading refactor as Item 33.'
-				},
-				{
-					n: 8,
-					name: 'Configurable & Verbose Grid Display',
-					status: 'done',
-					size: 'L',
-					use: 5,
-					group: 'grid',
-					note: 'Shipped 2026-06-28 — verbose mode: shared VerboseFieldsMenu (Fields popover, Verbose toggle + scrollable 6-cap picker) renders chosen fields as key/value rows on both Files (DataGrid masonry) + Records (RecordListColumn). field_values returned inline via ?fields (shared buildFieldValues), no per-tile fetch. Fields: catalog→class schema, Records→type schema, All Files→intrinsic (client-side). Durable per-entity. Virtualization → Item 40.'
-				},
-				{
-					n: 40,
-					name: 'Grid virtualization for large catalogs',
-					status: 'discussion',
-					size: 'M',
-					prio: 'low',
-					use: 2,
-					group: 'grid',
-					oq: 1,
-					note: 'Carved out of Item 8. Grid renders every tile today; verbose mode makes tiles heavier so big catalogs jank sooner (a tile-COUNT problem, separate from fields). Windowing is trickier on masonry — needs per-tile estimated offsets from the balancer. OQ: always-on vs above-N vs paged fallback. NOT 1.0-blocking.'
-				},
-				{
-					n: 10,
-					name: 'Filter for Missing / Empty Fields',
-					status: 'done',
-					size: 'M',
-					use: 3,
-					group: 'grid',
-					note: "Shipped — rail 'Show' group (EmptyFieldFilter): 'Incomplete only' + per-field 'is empty'; Records + single-class Files catalog. Shared empty predicate in core/filters.ts; ?incomplete on records list / class members, per-field via ?filters. Transient (not persisted)."
-				},
-				{
-					n: 12,
-					name: 'Fix / Normalize File Extension (+ rename UX)',
-					status: 'done',
-					size: 'S',
-					use: 2,
-					group: 'misc',
-					note: "Shipped — magic-byte sniff (PNG/JPG/GIF/TIFF/WEBP/BMP/PDF/HEIC) flags a name-extension that disagrees with content; shares the MetadataButton warning badge (needsAttention = dim‖ext) + one-tap 'Fix to .png' hint. Header rename made first-class: split base-name + extension fields, retiring the duplicate dialog rename. GET .../extension-check; reuses O(1) renameBlobById. No auto-fix-on-upload, no bulk fix."
-				},
-				{
-					n: 13,
-					name: 'Swap Width/Height (orientation fix)',
-					status: 'done',
-					size: 'S',
-					use: 2,
-					group: 'misc',
-					note: "Shipped (reframed) — dimension-consistency check + fix: surfaces only on stored-vs-image mismatch (warning badge on MetadataButton + in-dialog banner). Smart 'Correct dimensions' + manual 'Swap W↔H'; dependency-free (exiftool). GET .../dimension-check + POST .../dimensions. Pixel re-encode deferred (Item 35/sharp)."
-				},
-				{
-					n: 14,
-					name: 'Posts — Markdown writing sub-app',
-					status: 'done',
-					size: 'L',
-					prio: 'med',
-					use: 4,
-					group: 'kinds',
-					note: 'Shipped (in-repo complete) — /posts sub-app w/ schema-driven frontmatter + reader render (Shiki). TipTap block editor: Records-shaped layout (writing column + right Post-details panel), shadcn toolbar + / slash menu, mm:// photo islands edited in the right panel (IslandEditor: convert-kind-in-place, roomy beside-prose), external links open in a new tab. Byte-stable md round-trip. Only out-of-repo Phase 5 (nicb.at migration) remains.'
-				},
-				{
-					n: 15,
-					name: 'Image Compression Management',
-					status: 'done',
-					size: 'L',
-					prio: 'low',
-					use: 2,
-					group: 'assets',
-					note: 'Phases 1 + 2 shipped 2026-08-18 — compressed twins alongside the originals, measured (SSIM) and reported at /compression. Presets are the unit and things subscribe to them; a blob gets the UNION of the workspace + every class it is in, so a multi-class blob has no conflict to resolve, and a prune only drops what no remaining subscriber wants. Manifest `derived` block, background worker w/ batched writes, backfill + sweep, width-bearing presets, per-class subscription UI, per-file Compression section, file:saved/quality/presets + sort keys, reader variant()/variantInfo()/srcset(). Resolved its open question and settled Item 35; Item 23 now depends on it. Item 47 (versioned URLs) carved out; phase 3 (video) unscheduled.'
-				},
-				{
-					n: 47,
-					name: 'Versioned derivative URLs (cache-busting)',
-					status: 'discussion',
-					size: 'S',
-					prio: 'low',
-					use: 2,
-					group: 'assets',
-					oq: 1,
-					note: 'Carved out of Item 15 as a deferred decision with a recorded trigger: revisit if image links get shared, or the site feels slow. Ships today as clean filenames + a 1-hour cache lifetime. Preferred shape = version the directory (/derived/web.a1b2c3/), not the filename; ?v= rejected (some CDNs drop query strings from the cache key). Cheap to defer because derivative names are always read from the manifest, never reconstructed.'
-				},
-				{
-					n: 17,
-					name: 'Capture Nested Folder Path on Upload',
-					status: 'active',
-					size: 'M',
-					prio: 'med',
-					use: 3,
-					group: 'misc',
-					oq: 4,
-					stale: true,
-					note: 'User-requested; decisions locked. Pointers name removed ImageEditorPane/repo.ts. Collisions sequence after Item 6.'
-				},
-				{
-					n: 41,
-					name: 'Manual ordering of classes & record types',
-					status: 'discussion',
-					size: 'M',
-					prio: 'low',
-					use: 2,
-					group: 'misc',
-					oq: 1,
-					note: 'Split out of Item 18 (a feature, not a migration) &mdash; not 1.0. Activates the dead classOrder + dormant typeOrder: reorder UX in both rails + server-side sort-on-read. Decided: persist to existing fields, sort at canonical list endpoints, append unlisted. Open: reorder interaction (&vellip; move up/down vs drag vs both).'
-				},
-				{
-					n: 21,
-					name: 'Full PDF Preview',
-					status: 'active',
-					size: 'M',
-					prio: 'low',
-					use: 3,
-					group: 'kinds',
-					note: 'PDF storage/metadata shipped. Inline &lt;iframe&gt; preview + first-page thumbnail remain — solid scan/browse win.'
-				},
-				{
-					n: 23,
-					name: 'Video & GIF Media Support',
-					status: 'active',
-					size: 'L',
-					prio: 'med',
-					use: 4,
-					group: 'kinds',
-					note: 'User-requested. Expands what the tool can actually manage. Inline &lt;video&gt;, poster thumbnails, range requests, exiftool duration/codec.'
-				},
-				{
-					n: 24,
-					name: 'DOCX Support (+ convert-to-PDF)',
-					status: 'active',
-					size: 'L',
-					prio: 'med',
-					use: 3,
-					group: 'kinds',
-					deps: [21],
-					note: 'User-requested but narrower. LibreOffice-headless vs pure-JS converter — decide against npx footprint (Item 30).'
-				},
-				{
-					n: 25,
-					name: 'Globals Panel Overhaul',
-					status: 'active',
-					size: 'M',
-					prio: 'med',
-					use: 3,
-					group: 'fields',
-					note: 'User-requested but globals is a niche surface. Rich previews + nicer layout. Overlaps Item 26 — design together.'
-				},
-				{
-					n: 26,
-					name: 'File-Field UI Overhaul (preview + go-to-file)',
-					status: 'active',
-					size: 'M',
-					prio: 'med',
-					use: 4,
-					group: 'fields',
-					deps: [20],
-					note: "User-requested. Improves the core linking UX everywhere FieldInput renders. Larger preview + 'go to file' deep-link. Ties to Item 20."
-				},
-				{
-					n: 36,
-					name: '`relation` field type (record→record)',
-					status: 'active',
-					size: 'L',
-					prio: 'med',
-					use: 5,
-					group: 'fields',
-					note: 'Highest-leverage data-model edge — turns the islands into a graph. Deferred 2026-06-22; ?record= deep links now exist to click through. Ship single-target first.'
-				},
-				{
-					n: 38,
-					name: 'Decouple field key from display label',
-					status: 'discussion',
-					size: 'M',
-					prio: 'low',
-					use: 3,
-					group: 'fields',
-					oq: 2,
-					note: 'Drop the snake_case nag — type the field name verbatim. Design doc has Option A (free-form keys = trap) vs B (stored label, stable slug = recommended) + a SQLite-substrate note. Parked 2026-06-28 during Item 3 scoping.'
-				},
-				{
-					n: 11,
-					name: 'AI / External Field Enrichment',
-					status: 'active',
-					size: 'L',
-					prio: 'low',
-					use: 2,
-					group: 'integrations',
-					note: 'Downstream-app ideas (vision API, local vector search). Explicitly non-core — park / spin out.'
-				},
-				{
-					n: 37,
-					name: 'Import from Google Photos (Picker API)',
-					status: 'ready',
-					inProgress: true,
-					size: 'L',
-					prio: 'med',
-					use: 3,
-					group: 'integrations',
-					oq: 0,
-					note: '🛠 <b>In progress (agent building now, 2026-06-29)</b> — server module, googleConfig storage, /api/google-photos/* routes + GooglePhotosDialog scaffolded. Rare-use but user-requested. Full design + mockup exist; collapses onto the upload path. Research closed all 4 OQs (2026-06-29): scope is sensitive not restricted (no CASA); BYO-creds+Testing sidesteps verification; loopback+PKCE w/ dynamic port is Google-recommended (needs own in-server findFreePort); { imported, failed } per-item loop; recommend In-production status + status pill. Caveat: baseUrl=d strips GPS EXIF.'
-				},
-
-				{
-					n: 30,
-					name: 'Editor npx Setup — zero-config root discovery',
-					status: 'done',
-					size: null,
-					use: 4,
-					group: 'npx',
-					note: 'Shipped 2026-06-28 — media-manager.config.json discovery (walk-up) + serve/init/config/build/doctor verbs (+--help) + build-on-demand. Publishing carved out → 43.'
-				},
-				{
-					n: 31,
-					name: 'Ephemeral Server Port + auto-open',
-					status: 'done',
-					size: null,
-					use: 3,
-					group: 'npx',
-					note: 'Shipped 2026-06-28 — probe :0 ephemeral port, readiness auto-open (not setTimeout); --port pin.'
-				},
-				{
-					n: 32,
-					name: 'Quiet Heal — persist reconcile only on real change',
-					status: 'done',
-					size: null,
-					use: 4,
-					group: 'npx',
-					note: 'Shipped 2026-06-28 — git-clean browse (guards already no-op; git tracks content not mtime); locked by manifest.test.ts. Content-hash trigger carved out → 42.'
-				},
-				{
-					n: 42,
-					name: 'Quiet-Heal content-hash resync trigger (perf)',
-					status: 'ready',
-					size: 'S',
-					prio: 'low',
-					use: 2,
-					group: 'npx',
-					oq: 0,
-					note: "Carved from 32. Perf only — git-clean already met. Swap the mtime resync trigger for a content hash so git-checkout doesn't re-parse class files each browse."
-				},
-				{
-					n: 43,
-					name: 'npx Package Publishing (registry)',
-					status: 'discussion',
-					size: 'M',
-					prio: 'low',
-					use: 3,
-					group: 'npx',
-					oq: 2,
-					note: "Carved from 30 (former 27). Deferred out of 1.0. prepublishOnly build ships build/ (consumers don't build); the risk is install-time native deps (exiftool/heic) cross-platform."
-				},
-				{
-					n: 33,
-					name: 'Reader Package (build-time / static, read-only)',
-					status: 'done',
-					size: 'L',
-					prio: 'medium',
-					use: 3,
-					group: 'npx',
-					oq: 0,
-					note: 'Shipped 2026-06-29. media-manager/reader subpath: MediaManager.load({data,files}) facade → media/records/globals/file + fluent Collection; ext-case asset resolution; version guard. 20 tests; proven against nicb.at real data (29 photos w/ src, globals file refs). Thin standalone package → Item 44. Plan: plans/v1.0/npx/reader-package-plan.html.'
-				},
-				{
-					n: 44,
-					name: 'Reader as a Thin Standalone Package (friend-facing)',
-					status: 'discussion',
-					size: 'M',
-					prio: 'low',
-					use: 3,
-					group: 'npx',
-					oq: 2,
-					note: 'Depends on 33. Publish the reader as its own zero-runtime-dep package (svelte/vite as peers) so a friend installs only the thin reader, not the heavy editor (exiftool/heic/sharp). Sibling to 43, parallels the Masonry extraction (39). Build in-monorepo first; later lift-and-shift.'
-				},
-				{
-					n: 34,
-					name: 'Reimplement masonry grid layout',
-					status: 'done',
-					size: 'M',
-					use: 4,
-					group: 'assets',
-					note: 'Shipped — replaced @masonry-grid/svelte with an in-house, dependency-free, order-preserving balanced packer (src/lib/components/masonry/Masonry.svelte), wired into DataGrid thumbnail variant behind the existing GridSize; native aspect ratio (height estimated for column-balancing only — no fixed-height frames). Old library removed. Publishable-extraction follow-up → Item 39.'
-				},
-				{
-					n: 39,
-					name: 'Consume @nicbat/svelte-masonry as a GitHub dependency',
-					status: 'ready',
-					size: 'S',
-					prio: 'low',
-					use: 3,
-					group: 'assets',
-					oq: 0,
-					note: 'Extraction SHIPPED early 2026-06-28: the in-house packer now lives in its own standalone repo github.com/nicbat/svelte-masonry (@nicbat/svelte-masonry v0.1.0, svelte-package build, publint-clean, README+MIT). Open Q resolved → separate standalone repo + @nicbat scope (not a monorepo workspace). Remaining (deliberately NOT 1.0-blocking, per user): media-manager still uses its local copy at src/lib/components/masonry/ — swap it for github:nicbat/svelte-masonry#<tag>, delete the copy, update CLAUDE.md. npm-registry publish is a later separate step.'
-				},
-				{
-					n: 35,
-					name: 'Remove (or use) the `sharp` dependency',
-					status: 'done',
-					size: 'S',
-					prio: 'low',
-					use: 2,
-					group: 'assets',
-					note: 'Resolved 2026-08-18 by Item 15 — the "actually use it" branch won: sharp is the encoder behind the compression pipeline (server/compression/generate.ts + ssim.ts). No longer a dangling dependency.'
-				},
-
-				{
-					n: 16,
-					name: 'Open Design Questions',
-					status: 'discussion',
-					size: null,
-					use: 1,
-					group: 'storage',
-					oq: 2,
-					note: "Meta — defaults storage policy + Svelte-5 do/don't guidance. Decisions you owe before related work."
-				},
-				{
-					n: 18,
-					name: 'Records Storage Reorganization',
-					status: 'done',
-					size: 'M',
-					use: 2,
-					group: 'storage',
-					oq: 0,
-					note: '✅ Shipped 2026-06-28. json types &rarr; records/&lt;typeId&gt;/; app-wide prefs hoisted to root settings.json (media/settings.json keeps only classOrder); records/settings.json holds a dormant typeOrder; globals stays top-level; dataFileName dropped. Explicit upgrade-data step 6 (idempotent); no dual-read — layoutGuard fails loudly on the old layout. Reorder UX split to Item 41.'
-				},
-				{
-					n: 19,
-					name: "Per-Class 'Should/Shouldn't Be Here' Review",
-					status: 'discussion',
-					size: 'M',
-					prio: 'medium',
-					use: 3,
-					group: 'storage',
-					note: "excludedFiles successor — per-class triage/dismiss. Deferred out of 1.0 (2026-06-28): cheap unclassified-only version doesn't earn its UI; real value needs a heuristic candidate source. Revisit then."
-				},
-				{
-					n: 20,
-					name: 'File-Based Routing',
-					status: 'discussion',
-					size: null,
-					use: 3,
-					group: 'storage',
-					note: "Enabler — shareable/bookmarkable URLs + unblocks clean 'go-to-file' (26) and mobile (29). Partly shipped (?record=)."
-				},
-				{
-					n: 45,
-					name: 'Static-assets blob store + export',
-					status: 'done',
-					size: 'M',
-					use: 4,
-					group: 'assets',
-					note: 'Shipped 2026-08-07 (media-manager side) — opt-in `assets:{dir,baseUrl}` config stores blobs in the host static folder (CDN-served, not bundled; fixes size-capped serverless fns); config/init auto-detect, doctor validates, `export` reunites; reader `baseUrl` mode. nicb.at cutover (P7) is out-of-repo.'
-				},
-				{
-					n: 46,
-					name: 'Storage-location UI + blob migration',
-					status: 'done',
-					size: 'M',
-					use: 4,
-					group: 'assets',
-					note: 'Shipped 2026-08-17 — Storage section in app Settings changes where blobs live (classic↔static, relocate) and MOVES the blobs with it (move/copy/leave). Engine `migrateBlobs` (manifest-authoritative, copy→verify→delete, aborts on conflict/missing); persists to config `assets` block (creates it on first save) + flips live env (no restart). API `/api/settings/storage(+/preview)`. Makes the nicb.at cutover one click. Builds on Item 45.'
-				}
-			];
+	{
+		"n": 42,
+		"name": "Quiet-Heal Content-Hash Resync Trigger (perf)",
+		"status": "ready",
+		"size": "S",
+		"use": 2,
+		"group": "npx",
+		"oq": 0,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "Replace the mtime-gated resync trigger (`reconcileAndResync`) with a content-derived signal so a `git checkout` (which resets mtimes) doesn't re-parse every class file on each browse · No behavior change to the membership index or the `healed` report — purely avoids redundant work"
+	},
+	{
+		"n": 43,
+		"name": "npx Package Publishing (registry — later phase)",
+		"status": "discussion",
+		"size": "M",
+		"use": 3,
+		"group": "npx",
+		"oq": 2,
+		"prio": "low",
+		"stale": false,
+		"deps": [
+			30
+		],
+		"note": "npm `bin`/`files`/`engines` fields + a `prepublishOnly` build so `build/` ships in the tarball (consumers never build) · Scoped name `@nicbat/media-manager`; cross-platform native-dep audit of `exiftool-vendored` / `heic-convert` · `npx media-manager` from the published registry works on macOS / Linux / Windows"
+	},
+	{
+		"n": 44,
+		"name": "Reader as a Thin Standalone Package (friend-facing distribution)",
+		"status": "discussion",
+		"size": "M",
+		"use": 3,
+		"group": "npx",
+		"oq": 2,
+		"prio": "low",
+		"stale": false,
+		"deps": [
+			33
+		],
+		"note": "Extract the Item 33 reader to its own publishable package (e.g. @nicbat/media-manager-reader) with an explicit dependency budget (Posts currently needs markdown-it, yaml, and Shiki) — NOT the heavy editor package · A consumer (a friend's static site) installs only the thin reader: `npm i @nicbat/media-manager-reader`, `import { MediaManager } from '@nicbat/media-manager-reader'` — no exiftool/heic-convert/sharp/sveltekit pulled in · Built dist (JS + .d.ts) ships in the tarball; lift-and-shift from src/lib/reader/ (zero coupling, same discipline as the Masonry extraction)"
+	},
+	{
+		"n": 7,
+		"name": "Static Site Export (no runtime API for customers)",
+		"status": "blocked",
+		"size": "L",
+		"use": 1,
+		"group": "npx",
+		"oq": 3,
+		"prio": "medium",
+		"stale": false,
+		"deps": [
+			6
+		],
+		"note": "`npm run export -- <root> --out <dir>` reuses the storage read layer (no duplicated read logic) · Emits static JSON snapshots per type/class + globals + schema, copies referenced blobs · Generates a read-only browsing UI (galleries, record views, client-side filters) with no write endpoints"
+	},
+	{
+		"n": 38,
+		"name": "Decouple field key from display label (drop the snake_case nag)",
+		"status": "discussion",
+		"size": "M",
+		"use": 3,
+		"group": "fields",
+		"oq": 2,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "The schema editor lets the user type a field name verbatim (no forced snake_case); the human label persists · Field identity stays a stable, URL-safe slug under the hood (renames/relabels do not rewrite every record) · Optional: bulk JSON export (Item 3) can resolve keys → labels so exported files read naturally"
+	},
+	{
+		"n": 26,
+		"name": "File-Field UI Overhaul (preview + navigate-to-file)",
+		"status": "ready",
+		"size": "M",
+		"use": 4,
+		"group": "fields",
+		"oq": 0,
+		"prio": "medium",
+		"stale": false,
+		"deps": [],
+		"note": "Larger/expandable preview of the referenced blob (reuse the FileEditorPanel lightbox; support non-image kinds as Items 23/24 land) · A \"go to file\" affordance that opens the referenced blob in the Files hub editor · Applied consistently everywhere FieldInput renders a `file` field (FileEditorPanel, RecordDetailPane, GlobalsEditorPane)"
+	},
+	{
+		"n": 25,
+		"name": "Globals Panel Overhaul (previews + nicer layout)",
+		"status": "ready",
+		"size": "M",
+		"use": 3,
+		"group": "fields",
+		"oq": 0,
+		"prio": "medium",
+		"stale": false,
+		"deps": [],
+		"note": "Rich value previews in the globals editor (image/file thumbnails, url link previews) — overlaps Item 26, design together · Nicer layout (grouped/sectioned fields, spacing) preserving the __field_kinds / __field_meta metadata model · Full parity: any field type/feature the json RecordDetailPane supports still works here"
+	},
+	{
+		"n": 4,
+		"name": "Schema Import/Export",
+		"status": "discussion",
+		"size": "M",
+		"use": 2,
+		"group": "fields",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "Export a type's/class's schema as standalone JSON · Import a schema from JSON (merge or replace) with validation · Clone a schema from another media type / class"
+	},
+	{
+		"n": 23,
+		"name": "Video & GIF Media Support",
+		"status": "blocked",
+		"size": "L",
+		"use": 4,
+		"group": "kinds",
+		"oq": 1,
+		"prio": "medium",
+		"stale": false,
+		"deps": [
+			15
+		],
+		"note": "Recognize video (.mp4/.webm/.mov/…); retain existing GIF image preview and verify animation behavior · Inline video preview with controls in FileEditorPanel + the lightbox; poster/first-frame thumbnails in DataGrid; regression-test existing GIF animation · Thumbnail generation for the grid (first frame), mirroring the image thumbnail path · exiftool duration/codec/dimensions in fileMetadata.ts; [id]/blob supports range requests for seeking"
+	},
+	{
+		"n": 21,
+		"name": "Full PDF Preview",
+		"status": "blocked",
+		"size": "M",
+		"use": 3,
+		"group": "kinds",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "Render PDFs inline via native browser embed (<iframe>/<embed>, no new deps) in FileEditorPanel, replacing the icon placeholder · Generate/serve first-page PDF thumbnails so the Files grid shows a preview instead of the icon"
+	},
+	{
+		"n": 24,
+		"name": "DOCX Media Support (+ convert-to-PDF)",
+		"status": "blocked",
+		"size": "L",
+		"use": 3,
+		"group": "kinds",
+		"oq": 1,
+		"prio": "medium",
+		"stale": false,
+		"deps": [
+			21
+		],
+		"note": "Recognize .docx/.doc; read basic metadata (title, author, word count) via exiftool · A per-file \"Convert to PDF\" action that writes + registers a new PDF blob, optionally linking back to the source · Once converted, the existing PDF preview/metadata path (Item 21) applies"
+	},
+	{
+		"n": 40,
+		"name": "Grid virtualization for large catalogs",
+		"status": "discussion",
+		"size": "M",
+		"use": 2,
+		"group": "grid",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "The tile grid renders only tiles near the viewport (windowing), recycling nodes on scroll · Scroll stays smooth in verbose mode at large member counts · Masonry column balance is preserved under windowing (estimated positions, no jump)"
+	},
+	{
+		"n": 47,
+		"name": "Versioned derivative URLs (cache-busting)",
+		"status": "discussion",
+		"size": "S",
+		"use": 2,
+		"group": "assets",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [
+			15
+		],
+		"note": "Derivative URLs carry a per-preset version segment (`/derived/web.a1b2c3/sunset.webp`) so a preset change invalidates instantly · Derivatives are served `immutable` with a long max-age; the 1-hour lifetime shipped in Item 15 is retired · Adopting it is a regenerate-and-sweep, not a migration — no manifest format change · `og:image` (and anything else a crawler re-fetches) still points at an **original**, never a versioned derivative"
+	},
+	{
+		"n": 39,
+		"name": "Consume `@nicbat/svelte-masonry` as a GitHub dependency",
+		"status": "ready",
+		"size": "S",
+		"use": 3,
+		"group": "assets",
+		"oq": 0,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "media-manager depends on `github:nicbat/svelte-masonry#<tag>` in package.json (npm-registry release deferred) · `src/lib/components/masonry/Masonry.svelte` deleted; `index.ts` re-exports `Masonry` from `@nicbat/svelte-masonry` (or DataGrid imports it directly and the folder is removed) — no behavior change to the files grid · CLAUDE.md's \"in-house `Masonry.svelte`\" notes updated to say it's an external dependency"
+	},
+	{
+		"n": 3,
+		"name": "Bulk Operations — bulk-export remainder",
+		"status": "discussion",
+		"size": "S",
+		"use": 1,
+		"group": "bulk",
+		"oq": 2,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "Bulk-export selected records as JSON (the only remaining bulk action)"
+	},
+	{
+		"n": 5,
+		"name": "Data Validation & Repair — verify coverage",
+		"status": "discussion",
+		"size": "S",
+		"use": 4,
+		"group": "bulk",
+		"oq": 2,
+		"prio": "medium",
+		"stale": false,
+		"deps": [],
+		"note": "Define and test explicit handling of missing fields, unknown keys, wrong types, and invalid values · Dry-run preserves bytes; apply follows the chosen policy, reports every change, and is idempotent"
+	},
+	{
+		"n": 11,
+		"name": "AI / External Field Enrichment",
+		"status": "discussion",
+		"size": "L",
+		"use": 2,
+		"group": "integrations",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "(Downstream/app-specific — park or spin out of the core repo)"
+	},
+	{
+		"n": 20,
+		"name": "File-Based Routing",
+		"status": "discussion",
+		"size": "M",
+		"use": 3,
+		"group": "storage",
+		"oq": 2,
+		"prio": "medium",
+		"stale": false,
+		"deps": [],
+		"note": "(Design the route tree — deep-linkable per-file/per-class routes + shareable view/filter URLs)"
+	},
+	{
+		"n": 19,
+		"name": "Per-Class \"Should / Shouldn't Be Here\" Review (excludedFiles successor)",
+		"status": "discussion",
+		"size": "M",
+		"use": 3,
+		"group": "storage",
+		"oq": 1,
+		"prio": "medium",
+		"stale": false,
+		"deps": [],
+		"note": "Per class, mark a file \"dismissed / not-relevant\" so it stops surfacing as a candidate (per-class, never a global hide) · A triage view: for a class, show candidate files (unclassified / heuristic) and quick add-to-class or dismiss · Dismissals stored in the class JSON (source of truth), optionally mirrored into the manifest index"
+	},
+	{
+		"n": 16,
+		"name": "Open Design Questions",
+		"status": "discussion",
+		"size": "S",
+		"use": 1,
+		"group": "storage",
+		"oq": 2,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "Decide the defaults-storage policy (explicit defaults vs. filter-for-empty) · Expand the Svelte 5 do/don't guidance ($bindable when appropriate vs. confusing)"
+	},
+	{
+		"n": 17,
+		"name": "Capture Nested Folder Path on Folder Upload",
+		"status": "blocked",
+		"size": "M",
+		"use": 3,
+		"group": "misc",
+		"oq": 4,
+		"prio": "medium",
+		"stale": false,
+		"deps": [],
+		"note": "Folder upload preserves per-file relative paths (webkitdirectory and/or drag-drop directory traversal) · An upload-time \"Save folder path to field\" option with a field selector (existing schema fields) · On import, write each file's relative path into the chosen field on the created/linked record"
+	},
+	{
+		"n": 41,
+		"name": "Manual ordering of classes & record types in the rails",
+		"status": "discussion",
+		"size": "M",
+		"use": 2,
+		"group": "misc",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [
+			18
+		],
+		"note": "User can reorder classes in the /files rail and record types in the /media rail; the order persists · classOrder (media/settings.json) and typeOrder (records/settings.json) are applied as sort-on-read in the canonical list endpoints (/api/classes GET, /api/media-types listing) so every consumer (rail, command palette, file picker) inherits the order · Newly created / unlisted entities append after the ordered ones, by the existing default sort"
+	},
+	{
+		"n": 29,
+		"name": "Records Explorer — Mobile / Narrow Drill-Down",
+		"status": "discussion",
+		"size": "M",
+		"use": 2,
+		"group": "misc",
+		"oq": 1,
+		"prio": "low",
+		"stale": false,
+		"deps": [],
+		"note": "On narrow viewports, show one pane at a time (rail → list → detail) with back navigation, reusing the is-mobile hook · Decide whether the rail becomes a top type-switcher or an offcanvas drawer on mobile"
+	},
+	{
+		"n": 50,
+		"name": "Verify host-site rollout separately from editor completion",
+		"status": "discussion",
+		"size": "S",
+		"use": 3,
+		"group": "reliability",
+		"oq": 1,
+		"prio": "medium",
+		"stale": false,
+		"deps": [
+			14,
+			45
+		],
+		"note": "In the chosen host repo, verify Posts Words/Now content and dates, image references, static assets, and responsive variants through a real site build · Record which migration/cutover steps actually ran, and leave unfinished host work in that repo"
+	},
+	{
+		"n": 51,
+		"name": "Durable recovery for drafts interrupted by browser termination",
+		"status": "discussion",
+		"size": "M",
+		"use": 5,
+		"group": "reliability",
+		"oq": 2,
+		"prio": "high",
+		"stale": false,
+		"deps": [
+			48
+		],
+		"note": "After agreeing the recovery policy, interrupted unsaved drafts can be offered on the next visit without silently replacing newer server edits · Recovery distinguishes workspaces, entities, and confirmed saves and supports explicit discard · Browser tests cover termination, reopening, newer server data, and successful recovery or discard"
+	},
+	{
+		"n": 1,
+		"name": "File Field Picker UI",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 2,
+		"name": "Missing File Indicators (API + UI)",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 6,
+		"name": "Stable File IDs",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 22,
+		"name": "Group-by across multiple classes (\"all of\" view)",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 28,
+		"name": "Per-Type / Per-Class Icon Picker",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 9,
+		"name": "Sorting & Ordering",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 10,
+		"name": "Filter for Missing / Empty Fields",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 13,
+		"name": "Swap Width/Height (orientation fix)",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 12,
+		"name": "Fix / Normalize File Extension (+ rename UX)",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 34,
+		"name": "Reimplement masonry grid layout",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 8,
+		"name": "Configurable & Verbose Grid Display",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 18,
+		"name": "Records Storage Reorganization",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 27,
+		"name": "npx Package Distribution",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 30,
+		"name": "Editor npx Setup — Zero-Config Root Discovery",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 31,
+		"name": "Ephemeral Server Port + Auto-Open",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 32,
+		"name": "Quiet Heal — Reconcile Only on Real Change",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 33,
+		"name": "Reader Package — Read-Only Host Integration",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 45,
+		"name": "Static-assets blob store + auto-detect + export",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 46,
+		"name": "Storage-location UI + blob migration",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 35,
+		"name": "Remove (or actually use) the `sharp` dependency",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 15,
+		"name": "Image Compression Management",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 0,
+		"name": "Editable URL fields",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 14,
+		"name": "Posts sub-app + reader rendering",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 36,
+		"name": "Record-to-record references",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 37,
+		"name": "Google Photos import",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 48,
+		"name": "Browser regression coverage across editors",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	},
+	{
+		"n": 49,
+		"name": "CLI, HTTP and recovery contracts",
+		"status": "shipped",
+		"size": null,
+		"use": 0,
+		"group": "archive",
+		"oq": 0,
+		"stale": false,
+		"note": "Shipped or folded. See the archive in FUTURE_CHANGES.md and the feature registry for actual behavior and remaining scope."
+	}
+];
 
 			const GROUPS = [
+				{
+					k: 'reliability',
+					t: 'Reliability & release confidence',
+					b: 'Proposed browser, boundary, and host-integration verification.'
+				},
 				{
 					k: 'npx',
 					t: 'npx-package vision cluster',
@@ -1000,7 +1149,7 @@
 				{
 					k: 'fields',
 					t: 'Data model & fields',
-					b: 'Field types, value editors, globals parity — the relation edge is the high-leverage one.'
+					b: 'Field labels, previews, and globals parity. Record references already ship.'
 				},
 				{
 					k: 'grid',
@@ -1010,7 +1159,7 @@
 				{
 					k: 'assets',
 					t: 'Asset pipeline & deps',
-					b: 'Thumbnails, masonry, the sharp decision — design the resize pipeline once.'
+					b: 'Compression follow-ups and masonry packaging; the sharp pipeline already ships.'
 				},
 				{
 					k: 'storage',
@@ -1027,13 +1176,18 @@
 					t: 'Integrations',
 					b: 'External services — kept opt-in and out of the core.'
 				},
-				{ k: 'misc', t: 'Misc fixes & polish', b: 'Small, self-contained quality-of-life items.' }
+				{ k: 'misc', t: 'Misc fixes & polish', b: 'Small, self-contained quality-of-life items.' },
+				{
+					k: 'archive',
+					t: 'Shipped & folded',
+					b: 'Historical IDs retained; see the feature registry for implementation details.'
+				}
 			];
 
 			const STATUS_LABEL = {
-				done: 'Done',
-				verify: 'Verify',
-				active: 'Active',
+				shipped: 'Shipped',
+				blocked: 'Blocked',
+				ready: 'Ready',
 				discussion: 'Discussion',
 				folded: 'Folded'
 			};
@@ -1046,8 +1200,16 @@
 
 			function useBadge(u) {
 				if (u === 0)
-					return `<span class="b use u0" title="no remaining value (done/folded)">Use —</span>`;
+					return `<span class="b use u0" title="no remaining value (shipped/folded)">Use —</span>`;
 				return `<span class="b use u${u}" title="usefulness ${u}/5">${'●'.repeat(u)}${'○'.repeat(5 - u)} ${u}/5</span>`;
+			}
+
+			function escapeHTML(value) {
+				return String(value)
+					.replaceAll('&', '&amp;')
+					.replaceAll('<', '&lt;')
+					.replaceAll('>', '&gt;')
+					.replaceAll('"', '&quot;');
 			}
 
 			function cardHTML(it, rank) {
@@ -1063,10 +1225,10 @@
 				const rankTag = rank ? `<span class="rank" title="usefulness rank">#${rank}</span>` : '';
 				return `<div class="card s-${it.status}${it.inProgress ? ' inprog' : ''}" data-status="${it.status}" data-size="${it.size || ''}"
        data-oq="${it.oq ? 1 : 0}" data-stale="${it.stale ? 1 : 0}" data-high="${it.prio === 'high' ? 1 : 0}"
-       data-text="${(it.name + ' ' + (it.note || '')).toLowerCase().replace(/"/g, '')}">
-    <div class="ttl">${rankTag}<span class="num">${it.n}</span><span class="name">${it.name}</span></div>
+       data-text="${escapeHTML((it.name + ' ' + (it.note || '')).toLowerCase())}">
+    <div class="ttl">${rankTag}<span class="num">${it.n}</span><span class="name">${escapeHTML(it.name)}</span></div>
     <div class="badges">${badges.join('')}</div>
-    <p class="note">${it.note || ''}</p>
+    <p class="note">${escapeHTML(it.note || '')}</p>
   </div>`;
 			}
 
@@ -1081,7 +1243,7 @@
 				} else {
 					board.innerHTML = GROUPS.map((g) => {
 						const items = ITEMS.filter((i) => i.group === g.k).sort((a, b) => {
-							const ord = { active: 0, verify: 1, discussion: 2, done: 3 };
+							const ord = { ready: 0, blocked: 1, discussion: 2, shipped: 3 };
 							return ord[a.status] - ord[b.status] || b.use - a.use || a.n - b.n;
 						});
 						if (!items.length) return '';
@@ -1116,10 +1278,10 @@
 
 			function renderStats() {
 				const c = {
-					active: 0,
-					verify: 0,
+					ready: 0,
+					blocked: 0,
 					discussion: 0,
-					done: 0,
+					shipped: 0,
 					oq: 0,
 					stale: 0,
 					S: 0,
@@ -1133,10 +1295,10 @@
 					if (i.size) c[i.size]++;
 				});
 				document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="n" style="color:var(--active)">${c.active}</div><div class="k">Active</div></div>
-    <div class="stat"><div class="n" style="color:var(--verify)">${c.verify}</div><div class="k">Verify / likely done</div></div>
+    <div class="stat"><div class="n" style="color:var(--ready)">${c.ready}</div><div class="k">Ready</div></div>
+    <div class="stat"><div class="n" style="color:var(--blocked)">${c.blocked}</div><div class="k">Blocked</div></div>
     <div class="stat"><div class="n" style="color:var(--discussion)">${c.discussion}</div><div class="k">Discussion</div></div>
-    <div class="stat"><div class="n" style="color:var(--done)">${c.done}</div><div class="k">Done / folded</div></div>
+    <div class="stat"><div class="n" style="color:var(--shipped)">${c.shipped}</div><div class="k">Shipped / folded</div></div>
     <div class="stat"><div class="n" style="color:var(--warn)">${c.oq}</div><div class="k">Have open Qs</div></div>
     <div class="stat"><div class="n" style="color:#ff9a9a">${c.stale}</div><div class="k">Stale refs</div></div>
     <div class="stat"><div class="n">${c.S}/${c.M}/${c.L}</div><div class="k">S / M / L</div></div>`;
@@ -1147,7 +1309,7 @@
 					const f = chip.dataset.f,
 						v = chip.dataset.v;
 					if (f === 'flag') {
-						chip.classList.toggle('active');
+						chip.classList.toggle('ready');
 						if (filters.flags.has(v)) filters.flags.delete(v);
 						else filters.flags.add(v);
 						applyFilters();
@@ -1155,8 +1317,8 @@
 						filters[f] = v;
 						chip.parentElement
 							.querySelectorAll('.chip')
-							.forEach((s) => s.classList.remove('active'));
-						chip.classList.add('active');
+							.forEach((s) => s.classList.remove('ready'));
+						chip.classList.add('ready');
 						if (f === 'view') render();
 						else applyFilters();
 					}

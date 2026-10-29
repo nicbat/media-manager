@@ -15,6 +15,7 @@
 </script>
 
 <script lang="ts">
+	import { dirtyFieldPatch } from '$lib/core/dirtyPatch.js';
 	import {
 		apiBlobUrl,
 		apiGetFileClasses,
@@ -140,6 +141,11 @@
 	let loadedFor: string | null = null;
 	/** Monotonic load counter; a response whose ticket is stale is dropped instead of applied. */
 	let loadSeq = 0;
+	// Nonreactive coordination only: pending writes must not trigger load effects.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const pendingWrites = new Map<string, Promise<void>>();
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const pendingFields = new Map<string, string[]>();
 
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
@@ -185,6 +191,8 @@
 		}
 		const seq = ++loadSeq;
 		try {
+			await pendingWrites.get(fid)?.catch(() => {});
+			if (seq !== loadSeq) return;
 			const data = await apiGetFileClasses(fid);
 			// A newer load (or a file switch) started while this one was in flight — drop the response.
 			if (seq !== loadSeq) return;
@@ -285,57 +293,79 @@
 		return `${formatBytes(row.originalSize)} → ${formatBytes(row.size)} (${pct >= 0 ? '−' : '+'}${Math.abs(pct)}%)`;
 	}
 
+	/** Promise tail serializing snapshots so outgoing writes cannot land out of order. */
+	let writeTail: Promise<unknown> = Promise.resolve();
 	/**
-	 * Persist every section with unsaved edits. Updates each section's saved snapshot as it goes (so a
-	 * mid-loop failure doesn't re-save the sections already written) and notifies the host. Throws on
-	 * failure — {@link createAutosave} owns the status/saving/toast bookkeeping.
+	 * Capture dirty sections before any await, then serialize their writes. Baselines describe the
+	 * submitted snapshot, never newer keystrokes; late responses cannot modify another file's state.
+	 *
+	 * @param fid - The outgoing blob id, captured independently of the currently selected file.
+	 * Concerns / future improvements: pending writes are in-memory and remain best effort on unload.
 	 */
-	async function saveDirtySections() {
-		if (!dirty) return;
-		const fid = fileId;
-		const saved: SavedSections['sections'] = [];
-		for (const s of sections) {
-			if (snapshotOf(s) !== savedSnapshots[s.id]) {
-				await apiUpdateClassRecord(s.id, fid, patchFor(s));
-				savedSnapshots[s.id] = snapshotOf(s);
-				saved.push({ classId: s.id, schema: s.schema, record: { ...s.record } });
-			}
-		}
-		onSaved?.({ fileId: fid, sections: saved });
+	function persistSections(fid: string) {
+		const seq = loadSeq;
+		// Clone before awaiting: nested list/url values and the live sections can change mid-save.
+		const pending = sections
+			.map((section) => {
+				const key = `${fid}/${section.id}`;
+				const patch = dirtyFieldPatch(
+					patchFor(section),
+					JSON.parse(savedSnapshots[section.id] || '{}'),
+					pendingFields.get(key)
+				);
+				if (Object.keys(patch).length) pendingFields.set(key, Object.keys(patch));
+				return { id: section.id, schema: section.schema, patch };
+			})
+			.filter((section) => Object.keys(section.patch).length);
+		if (!pending.length) return Promise.resolve();
+		const write = writeTail
+			.catch(() => {})
+			.then(async () => {
+				const saved: SavedSections['sections'] = [];
+				for (const s of pending) {
+					const updated = await apiUpdateClassRecord(s.id, fid, s.patch);
+					if (seq === loadSeq && loadedFor === fid) {
+						savedSnapshots[s.id] = JSON.stringify({
+							...JSON.parse(savedSnapshots[s.id] || '{}'),
+							...s.patch
+						});
+					}
+					saved.push({ classId: s.id, schema: s.schema, record: updated });
+				}
+				onSaved?.({ fileId: fid, sections: saved });
+			});
+		writeTail = write;
+		pendingWrites.set(fid, write);
+		void write
+			.finally(() => {
+				if (pendingWrites.get(fid) === write) {
+					pendingWrites.delete(fid);
+					for (const section of pending) pendingFields.delete(`${fid}/${section.id}`);
+				}
+			})
+			.catch(() => {});
+		return write;
 	}
 
-	/**
-	 * Fire-and-forget flush for the file we're leaving (effect cleanup can't be async, and
-	 * `beforeunload`). `fid` is captured so a mid-load file switch saves the OUTGOING blob's edits.
-	 */
+	/** Autosave entry point; propagates persistence failures to the shared status/toast handler. */
+	async function saveDirtySections() {
+		await persistSections(fileId);
+	}
+
+	/** Queue the outgoing file's latest edits even when an earlier save is still running. */
 	function flushLeavingSync(fid: string) {
 		autosave.cancel();
-		if (autosave.saving || !dirty) return;
-		for (const s of sections) {
-			if (snapshotOf(s) !== savedSnapshots[s.id]) {
-				const snap = snapshotOf(s);
-				const record = { ...s.record };
-				void apiUpdateClassRecord(s.id, fid, patchFor(s))
-					.then(() => {
-						savedSnapshots[s.id] = snap;
-						// `fid`, not the now-open blob: this is the OUTGOING file's flush.
-						onSaved?.({ fileId: fid, sections: [{ classId: s.id, schema: s.schema, record }] });
-					})
-					.catch((e) => console.error('Autosave on leave failed', e));
-			}
-		}
+		void persistSections(fid).catch((e) => console.error('Autosave on leave failed', e));
 	}
 
 	/** Flush pending edits, then run a prev/next navigation. */
 	async function advance(go: (() => void) | undefined) {
 		if (!go) return;
-		await autosave.commit();
-		go();
+		if (await autosave.commit()) go();
 	}
 
 	async function handleClose() {
-		await autosave.commit();
-		onclose();
+		if (await autosave.commit()) onclose();
 	}
 
 	/**

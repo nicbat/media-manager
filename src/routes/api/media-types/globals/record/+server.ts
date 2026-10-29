@@ -1,3 +1,4 @@
+import { readJsonBody } from '$lib/server/requestJson.js';
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
@@ -29,7 +30,7 @@ export const GET: RequestHandler = async () => {
  */
 export const POST: RequestHandler = async ({ request }) => {
 	await ensureGlobalsGroupExists();
-	const body = await request.json();
+	const body = await readJsonBody(request);
 	if (!body || typeof body !== 'object' || Array.isArray(body)) {
 		throw error(400, 'Globals patch must be an object');
 	}

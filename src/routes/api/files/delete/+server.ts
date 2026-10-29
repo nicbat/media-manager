@@ -1,3 +1,4 @@
+import { readJsonBody } from '$lib/server/requestJson.js';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
@@ -12,7 +13,7 @@ const DeleteBodySchema = z.object({ ids: z.array(ImageIdSchema).min(1) });
  * record from every class (global fan-out). Rare, explicitly confirmed on the client.
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const parsed = DeleteBodySchema.safeParse(await request.json());
+	const parsed = DeleteBodySchema.safeParse(await readJsonBody(request));
 	if (!parsed.success) throw error(400, 'ids array is required');
 	try {
 		// Unlink each blob from every class's linked record fields before it's removed from disk.

@@ -34,7 +34,7 @@ import {
 	mintFileId,
 	renameFileId as manifestRenameFileId,
 	removeFileId,
-	setClassMembership,
+	setClassMembershipBatch,
 	removeClassFromIndex,
 	applyMembershipIndex,
 	setEntryDimensions,
@@ -533,7 +533,7 @@ export async function addMembers(id: string, fileIds: string[]): Promise<JsonRec
 		if (added.length) await writeClassFile(id, { ...file, records });
 		return { added, out };
 	});
-	for (const fileId of result.added) await setClassMembership(fileId, id, true);
+	await setClassMembershipBatch(result.added, id, true);
 	return result.out;
 }
 
@@ -552,7 +552,7 @@ export async function removeMembers(id: string, fileIds: string[]): Promise<void
 		if (removed.length) await writeClassFile(id, { ...file, records });
 		return removed;
 	});
-	for (const fileId of removed) await setClassMembership(fileId, id, false);
+	await setClassMembershipBatch(removed, id, false);
 }
 
 /**

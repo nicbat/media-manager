@@ -503,7 +503,10 @@ async function serve() {
 	}
 
 	// Port precedence: --port flag → an already-exported PORT → probe an ephemeral one.
-	const boundPort = String(portFlag || env.PORT || (await findFreePort()));
+	const requestedPort = portFlag || env.PORT;
+	const boundPort = String(
+		!requestedPort || requestedPort === '0' ? await findFreePort() : requestedPort
+	);
 	env.PORT = boundPort;
 	const url = `http://localhost:${boundPort}`;
 
@@ -803,6 +806,31 @@ function exportWorkspace() {
 		process.exit(1);
 	}
 
+	// Reunite blobs by manifest.
+	const manifestNames = [];
+	/** `<preset>/<name>` paths of every derivative the manifest currently references. */
+	const derivedRel = [];
+	try {
+		const m = JSON.parse(fs.readFileSync(path.join(root, 'media', 'manifest.json'), 'utf-8'));
+		if (!m || !m.files || typeof m.files !== 'object' || Array.isArray(m.files)) {
+			throw new Error('manifest.files must be an object');
+		}
+		for (const e of Object.values(m.files || {})) {
+			if (!e || typeof e.file_name !== 'string') continue;
+			manifestNames.push(e.file_name);
+			for (const [presetId, d] of Object.entries(e.derived || {})) {
+				if (d && typeof d.file_name === 'string') derivedRel.push(`${presetId}/${d.file_name}`);
+			}
+		}
+	} catch (err) {
+		if (err.code === 'ENOENT') {
+			console.log('· manifest    none found — exporting JSON only (no blobs)');
+		} else {
+			console.error(`✘ manifest    Cannot export an unreadable manifest: ${err.message}`);
+			process.exit(1);
+		}
+	}
+
 	// Copy the JSON tree, excluding the in-workspace blob subtree (populated below), the Google secret,
 	// and lock files.
 	const filesSubtree = path.join(root, 'media', 'files');
@@ -822,23 +850,6 @@ function exportWorkspace() {
 		}
 	});
 	console.log(`✔ workspace   JSON tree → ${dest}`);
-
-	// Reunite blobs by manifest.
-	let manifestNames = [];
-	/** `<preset>/<name>` paths of every derivative the manifest currently references. */
-	let derivedRel = [];
-	try {
-		const m = JSON.parse(fs.readFileSync(path.join(root, 'media', 'manifest.json'), 'utf-8'));
-		for (const e of Object.values(m.files || {})) {
-			if (!e || typeof e.file_name !== 'string') continue;
-			manifestNames.push(e.file_name);
-			for (const [presetId, d] of Object.entries(e.derived || {})) {
-				if (d && typeof d.file_name === 'string') derivedRel.push(`${presetId}/${d.file_name}`);
-			}
-		}
-	} catch {
-		console.log('· manifest    none found — exporting JSON only (no blobs)');
-	}
 
 	const destFiles = path.join(dest, 'media', 'files');
 	fs.mkdirSync(destFiles, { recursive: true });
