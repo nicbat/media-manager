@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Match the OS supported by the lockfile's Playwright browser installer.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -42,7 +43,8 @@ jobs:
           retention-days: 14
 
   packaging:
-    runs-on: ubuntu-latest
+    # Match the OS supported by the lockfile's Playwright browser installer.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5

@@ -70,7 +70,7 @@ The October work is reconciled with **v0.6.2**, including the Git packaging fix.
 
 `npm run test:contracts` exercises the real CLI and built HTTP server for root precedence, nested config discovery, malformed config, ephemeral port readiness, doctor failure, child cleanup, static export/reopen, secret exclusion, missing/invalid IDs, malformed mutation bodies, and malformed persisted JSON. Export rejects an unreadable manifest before copying; selected mutation routes map malformed JSON to HTTP 400. Storage tests cover interrupted atomic replacement, lock contention, and stale-lock recovery. Atomic-write staging files are unique and cleaned after failure; this is not a guarantee against arbitrary power loss.
 
-`.github/workflows/verify.yml` runs type/lint/planning/Node/HTTP/browser checks plus a separate packaging job on Node 24. Browser failures retain screenshots and traces. The current commands and coverage are documented in FEATURES.md; the October 8 timing artifact stays historical evidence.
+`.github/workflows/verify.yml` runs type/lint/planning/Node/HTTP/browser checks plus a separate packaging job on Ubuntu 24.04/Node 24. Browser failures retain screenshots and traces. The current commands and coverage are documented in FEATURES.md; the October 8 timing artifact stays historical evidence.
 
 Items 48 and 49 are folded into the feature registry. Item 50 remains a separate host-repo task. Item 51 records the user's explicit decision to defer durable browser-termination recovery until draft retention and conflict policies are settled. No host-site changes or new release are part of this cleanup.
 

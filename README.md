@@ -160,6 +160,6 @@ Registry/tarball consumers use those same prepared outputs. `media-manager build
 - `npm run test:contracts`: build and exercise the actual CLI/HTTP server, portable exports, invalid requests and malformed persisted data against temporary workspaces.
 - `npm run check:plans`: validate backlog metadata, IDs, file pointers and the generated triage board; regenerate board data with `node scripts/check-plans.mjs --write`.
 
-GitHub Actions runs these checks and a real-consumer packaging job on Node 24. Browser failures retain screenshots/traces for 14 days. The `.agents/skills/test-ui-feature/` workflow documents manual UI captures using the actual server readiness URL.
+GitHub Actions runs these checks and a real-consumer packaging job on Ubuntu 24.04/Node 24. Browser failures retain screenshots/traces for 14 days. The `.agents/skills/test-ui-feature/` workflow documents manual UI captures using the actual server readiness URL.
 
 Durable recovery after browser/process termination is a separate, explicitly deferred feature (backlog Item 51). Pending network saves require the page to remain alive.
